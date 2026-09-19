@@ -251,3 +251,53 @@ def test_database_cascade_delete(test_db: Path) -> None:
     assert len(get_messages(session_id, db_path=test_db)) == 0
     assert get_final_prompt(session_id, db_path=test_db) is None
 
+
+def test_parse_reply_recovers_from_syntax_glitches() -> None:
+    """Verify parse_reply recovers from markdown fences, trailing braces, and trailing commas."""
+    # Markdown code fence wrapping
+    fenced = "```json\n{\"status\":\"ready\",\"type\":\"study\",\"final_prompt\":\"## Role\\nTeacher\"}\n```"
+    res = parse_reply(fenced, force_ready=True)
+    assert res is not None
+    assert res["status"] == "ready"
+    assert res["final_prompt"] == "## Role\nTeacher"
+
+    # Trailing brace glitch: ","}}
+    glitched_braces = '{"status":"ready","type":"study","final_prompt":"## Role\\nTeacher","}}'
+    res2 = parse_reply(glitched_braces, force_ready=True)
+    assert res2 is not None
+    assert res2["status"] == "ready"
+    assert res2["final_prompt"] == "## Role\nTeacher"
+
+    # Trailing comma before closing brace: ,}
+    trailing_comma = '{"status":"ready","type":"study","final_prompt":"## Role\\nTeacher",}'
+    res3 = parse_reply(trailing_comma, force_ready=True)
+    assert res3 is not None
+    assert res3["status"] == "ready"
+
+
+def test_call_llm_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify call_llm includes max_tokens and sets reasoning_effort for gpt-oss models."""
+    from unittest.mock import MagicMock
+    import services.llm as llm_module
+
+    mock_client = MagicMock()
+    mock_client.api_key = "mock_key"
+    mock_resp = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = '{"status": "ok"}'
+    mock_choice.finish_reason = "stop"
+    mock_resp.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    monkeypatch.setenv("GROQ_API_KEY", "mock_key")
+    monkeypatch.setattr(llm_module, "_client", mock_client)
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+    llm_module.call_llm([{"role": "user", "content": "hi"}], max_tokens=4000)
+
+    call_kwargs = mock_client.chat.completions.create.call_args[1]
+    assert call_kwargs["max_tokens"] == 4000
+    assert call_kwargs["reasoning_effort"] == "low"
+    assert llm_module.get_last_finish_reason() == "stop"
+
+

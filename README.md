@@ -1,106 +1,97 @@
-# Prompter
+# Prompt Builder (PROMPTER)
 
-A small web app that turns a rough idea into a structured, model-agnostic prompt you can paste into Claude, ChatGPT, Gemini, or any other AI.
+A local web application that turns rough ideas into structured, model-agnostic prompts ready to paste into Claude, ChatGPT, Gemini, etc. The app asks up to 4 quick clarifying questions or lets you skip straight to generation.
 
-You type an idea, the app asks a few short follow-up questions (max 4), then generates one clean prompt with sections like Role, Context, Task, Constraints, and Output format.
+---
 
 ## Features
 
-- Chat-style flow: asks only for what's missing, or skips straight to the prompt if your idea is already detailed
-- "Skip questions" button that builds the prompt right away, with `[PLACEHOLDER]`s where info is missing
-- Idea type detection (study, writing, research, other) with matching prompt templates
-- Saved history in SQLite, with type filters and search
-- One-click copy of the final prompt
-- "Shorter" and "More detailed" variants, with a version switcher
-- "Improve my prompt" mode for existing prompts
-- Prompt scoring (clarity, specificity, completeness)
+- **Conversational Builder**: Interactive chat loop with a maximum of 4 clarifying questions.
+- **Model-Agnostic Prompts**: Generates clean Markdown prompts with standard sections (`## Role`, `## Context`, `## Task`, `## Constraints`, `## Output format`).
+- **One-Click Refinements**: Generate "Shorter" or "More detailed" variants with a built-in version switcher.
+- **Improve My Prompt Mode**: Paste an existing prompt to enhance its structure and view a "what I changed" breakdown.
+- **Prompt Scoring**: Instant 1–10 rating across Clarity, Specificity, and Completeness with concrete suggestions.
+- **History & Search**: Persistent SQLite storage with real-time text search and category filter chips (`Study`, `Writing`, `Research`, `Other`).
+- **Multi-User Authentication**:
+  - User registration (`/register`) and login (`/login`) with session cookies.
+  - Secure password hashing using `werkzeug.security`.
+  - User-isolated session history and prompts.
+- **Sharing Readiness & Reliability**:
+  - Rate limiting on LLM routes (20 requests/minute per IP) via `flask-limiter`.
+  - Self-healing JSON parser with `failed_generation` recovery and auto-formatting.
+  - Configurable database location via `DATABASE_PATH`.
+  - Production-ready with `gunicorn`.
 
-## Tech stack
+---
 
-- Python 3.11+ and Flask
-- Groq API (`groq` SDK)
-- SQLite (stdlib `sqlite3`)
-- Vanilla HTML, CSS, and JavaScript
+## Environment Variables
 
-## Setup
+Copy `.env.example` to `.env` and set your configuration:
 
-1. Clone the repo and open the folder.
+```bash
+cp .env.example .env
+```
 
-2. Create a virtual environment and install dependencies:
+| Variable | Description | Default |
+|---|---|---|
+| `GROQ_API_KEY` | **Required.** Your Groq API key (`gsk_...`). | *None* |
+| `GROQ_MODEL` | The LLM model to use on Groq. | `llama-3.3-70b-versatile` (or `openai/gpt-oss-120b`) |
+| `APP_PASSWORD` | Shared default password fallback. | `admin` |
+| `SECRET_KEY` | Secret key used by Flask to sign session cookies. | `dev-secret-key-change-in-production` |
+| `DATABASE_PATH` | Path to the SQLite database file. | `data/app.db` |
 
+---
+
+## Installation & Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/luc32261/PROMPTER.git
+   cd PROMPTER
+   ```
+
+2. **Create a virtual environment:**
    ```bash
    python -m venv .venv
-   # Windows
-   .venv\Scripts\activate
-   # macOS / Linux
+   # Windows:
+   .\.venv\Scripts\activate
+   # macOS/Linux:
    source .venv/bin/activate
+   ```
 
+3. **Install dependencies:**
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the project root (see `.env.example`):
-
-   ```
-   GROQ_API_KEY=your_groq_api_key
-   GROQ_MODEL=openai/gpt-oss-120b
-   ```
-
-   Get a key from the [Groq Console](https://console.groq.com). Model availability depends on your account, so if you get a 404 `model_not_found` error, list the models your key can access and set `GROQ_MODEL` to one of them.
-
-4. Run the app:
-
+4. **Configure your `.env` file:**
    ```bash
-   flask --app app run
+   GROQ_API_KEY=your_groq_api_key_here
+   SECRET_KEY=your_flask_secret_key
    ```
 
-   Then open the local URL Flask prints (usually `http://127.0.0.1:5000`).
+---
 
-## Project structure
+## Running the Application
 
+### Development (Flask)
+```bash
+python app.py
 ```
-├── app.py               # Flask app and routes
-├── db.py                # SQLite helpers and schema
-├── services/
-│   ├── llm.py           # the only place that calls Groq
-│   └── builder.py       # chat-loop logic
-├── prompts/             # system prompts as text files
-│   ├── brain.txt
-│   └── types/
-├── templates/index.html
-├── static/              # app.js, style.css
-├── tests/
-├── SPEC.md              # full build spec
-└── AGENTS.md            # rules for the coding agent
+Visit `http://localhost:5000` to create an account or sign in.
+
+### Production (Gunicorn)
+```bash
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
 ```
 
-## API
+---
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/api/sessions` | Start a session with an idea |
-| POST | `/api/sessions/<id>/messages` | Answer a question (or `skip: true` to generate now) |
-| GET | `/api/sessions` | List history |
-| GET | `/api/sessions/<id>` | Load one session |
-| DELETE | `/api/sessions/<id>` | Delete a session |
+## Running Tests
 
-All errors return `{"error": "message"}`.
-
-## Tests
+Run the full automated test suite using `pytest`:
 
 ```bash
-pytest
+pytest -v
 ```
-
-The LLM is mocked in tests, so no API calls are made.
-
-## Notes
-
-- Keep `.env` and `data/` out of git. Both are in `.gitignore`.
-- This app has no authentication. It is meant for local, personal use. Add a login and rate limiting before hosting it publicly, otherwise anyone with the URL can spend your Groq quota.
-
-## Roadmap
-
-- Password login and rate limiting for hosting
-- More type templates (coding, image generation, business)
-- Streaming responses
-- Export history as JSON or markdown
+All unit and API tests use mocked LLM responses with zero API calls.

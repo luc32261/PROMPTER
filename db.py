@@ -1,12 +1,34 @@
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "app.db"
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def get_default_db_path() -> Path:
+    """Return configured database path from DATABASE_PATH or default to data/app.db."""
+    env_path = os.getenv("DATABASE_PATH")
+    if env_path:
+        return Path(env_path).resolve()
+    return Path(__file__).resolve().parent / "data" / "app.db"
+
+
+DEFAULT_DB_PATH = get_default_db_path()
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
   idea        TEXT NOT NULL,
   type        TEXT,                       -- study | writing | research | other
   status      TEXT NOT NULL DEFAULT 'asking',  -- asking | ready
@@ -51,28 +73,96 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
 
 
 def init_db(db_path: str | Path | None = None) -> None:
-    """Initialize database tables according to the spec schema."""
+    """Initialize database tables according to the spec schema and apply migrations."""
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
+        # Check if user_id column exists in sessions table for existing databases
+        cursor = conn.execute("PRAGMA table_info(sessions);")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "user_id" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
 
 
-def create_session(idea: str, db_path: str | Path | None = None) -> int:
-    """Create a new session with an initial idea."""
+def create_user(
+    username: str,
+    password_hash: str,
+    db_path: str | Path | None = None,
+) -> int | None:
+    """Create a new user. Returns user id or None if username already exists."""
+    with get_connection(db_path) as conn:
+        try:
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?);",
+                (username.strip(), password_hash),
+            )
+            return int(cursor.lastrowid)
+        except sqlite3.IntegrityError:
+            return None
+
+
+def get_user_by_username(
+    username: str,
+    db_path: str | Path | None = None,
+) -> sqlite3.Row | None:
+    """Retrieve a user by username (case-insensitive)."""
     with get_connection(db_path) as conn:
         cursor = conn.execute(
-            "INSERT INTO sessions (idea, status) VALUES (?, 'asking');",
-            (idea,),
+            "SELECT id, username, password_hash, created_at FROM users WHERE username = ? COLLATE NOCASE;",
+            (username.strip(),),
         )
+        return cursor.fetchone()
+
+
+def get_user_by_id(
+    user_id: int,
+    db_path: str | Path | None = None,
+) -> sqlite3.Row | None:
+    """Retrieve a user by id."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT id, username, password_hash, created_at FROM users WHERE id = ?;",
+            (user_id,),
+        )
+        return cursor.fetchone()
+
+
+def create_session(
+    idea: str,
+    user_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> int:
+    """Create a new session with an initial idea and optional user owner."""
+    with get_connection(db_path) as conn:
+        if user_id is not None:
+            cursor = conn.execute(
+                "INSERT INTO sessions (idea, status, user_id) VALUES (?, 'asking', ?);",
+                (idea, user_id),
+            )
+        else:
+            cursor = conn.execute(
+                "INSERT INTO sessions (idea, status) VALUES (?, 'asking');",
+                (idea,),
+            )
         return int(cursor.lastrowid)
 
 
-def get_session(session_id: int, db_path: str | Path | None = None) -> sqlite3.Row | None:
-    """Retrieve a session by its ID."""
+def get_session(
+    session_id: int,
+    user_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> sqlite3.Row | None:
+    """Retrieve a session by its ID, optionally enforcing user ownership."""
     with get_connection(db_path) as conn:
-        cursor = conn.execute(
-            "SELECT id, idea, type, status, created_at FROM sessions WHERE id = ?;",
-            (session_id,),
-        )
+        if user_id is not None:
+            cursor = conn.execute(
+                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE id = ? AND user_id = ?;",
+                (session_id, user_id),
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE id = ?;",
+                (session_id,),
+            )
         return cursor.fetchone()
 
 
@@ -160,17 +250,36 @@ def get_all_prompts(session_id: int, db_path: str | Path | None = None) -> list[
         return cursor.fetchall()
 
 
-def list_sessions(db_path: str | Path | None = None) -> list[sqlite3.Row]:
-    """List all sessions ordered newest first."""
+def list_sessions(
+    user_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> list[sqlite3.Row]:
+    """List all sessions ordered newest first, optionally filtered by user."""
     with get_connection(db_path) as conn:
-        cursor = conn.execute(
-            "SELECT id, idea, type, status, created_at FROM sessions ORDER BY id DESC;",
-        )
+        if user_id is not None:
+            cursor = conn.execute(
+                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE user_id = ? ORDER BY id DESC;",
+                (user_id,),
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT id, user_id, idea, type, status, created_at FROM sessions ORDER BY id DESC;",
+            )
         return cursor.fetchall()
 
 
-def delete_session(session_id: int, db_path: str | Path | None = None) -> bool:
-    """Delete a session and cascade delete its messages and prompts."""
+def delete_session(
+    session_id: int,
+    user_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Delete a session and cascade delete its messages and prompts, optionally checking user ownership."""
     with get_connection(db_path) as conn:
-        cursor = conn.execute("DELETE FROM sessions WHERE id = ?;", (session_id,))
+        if user_id is not None:
+            cursor = conn.execute(
+                "DELETE FROM sessions WHERE id = ? AND user_id = ?;",
+                (session_id, user_id),
+            )
+        else:
+            cursor = conn.execute("DELETE FROM sessions WHERE id = ?;", (session_id,))
         return cursor.rowcount > 0

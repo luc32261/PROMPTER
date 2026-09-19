@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any
 
@@ -11,7 +12,7 @@ from db import (
     save_final_prompt,
     update_session,
 )
-from services.llm import call_llm
+from services.llm import call_llm, get_last_finish_reason
 
 MAX_QUESTIONS = 4
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
@@ -34,10 +35,25 @@ def build_system_prompt(session_type: str | None) -> str:
 
 def parse_reply(raw: str, force_ready: bool) -> dict[str, Any] | None:
     """Parse and validate the JSON reply from the model against the contract."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    if not isinstance(raw, str):
         return None
+
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    data = None
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        # Attempt recovery on common trailing LLM JSON glitches
+        cleaned = re.sub(r'",\s*"*\}\}\s*$', '"}', text)
+        cleaned = re.sub(r',\s*\}', '}', cleaned)
+        try:
+            data = json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
     if not isinstance(data, dict):
         return None
@@ -91,10 +107,12 @@ def run_turn(
             {"role": "system", "content": "Generate the final prompt now. status MUST be 'ready'."}
         )
 
-    raw = call_llm(messages_for_llm, json_mode=True)
+    raw = call_llm(messages_for_llm, json_mode=True, max_tokens=4000)
     parsed = parse_reply(raw, force_ready=force_ready)
 
     if parsed is None:
+        finish_reason = get_last_finish_reason()
+        print(f"[parse_reply failed] finish_reason={finish_reason}\nraw={raw}", flush=True)
         retry_messages = list(messages_for_llm) + [
             {"role": "assistant", "content": raw},
             {
@@ -102,9 +120,11 @@ def run_turn(
                 "content": "Your last reply was invalid. Return only valid JSON in the required shape.",
             },
         ]
-        retry_raw = call_llm(retry_messages, json_mode=True)
+        retry_raw = call_llm(retry_messages, json_mode=True, max_tokens=4000)
         parsed = parse_reply(retry_raw, force_ready=force_ready)
         if parsed is None:
+            finish_reason = get_last_finish_reason()
+            print(f"[parse_reply retry failed] finish_reason={finish_reason}\nretry_raw={retry_raw}", flush=True)
             raise ModelOutputError("Model returned invalid output")
         raw_to_save = retry_raw
     else:
@@ -130,10 +150,11 @@ def run_turn(
 
 def create_session_with_idea(
     idea: str,
+    user_id: int | None = None,
     db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Create a new session, record the idea as user message, and run the first turn."""
-    session_id = create_session(idea, db_path=db_path)
+    session_id = create_session(idea, user_id=user_id, db_path=db_path)
     add_message(session_id, "user", idea, db_path=db_path)
     return run_turn(session_id, skip=False, db_path=db_path)
 
@@ -202,6 +223,7 @@ def refine_prompt(
 
 def improve_prompt(
     raw_prompt: str,
+    user_id: int | None = None,
     db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Improve an existing prompt directly and save as a ready session."""
@@ -242,7 +264,7 @@ def improve_prompt(
 
     # Persist as a ready session
     idea_snippet = cleaned[:80] + ("..." if len(cleaned) > 80 else "")
-    session_id = create_session(idea_snippet, db_path=db_path)
+    session_id = create_session(idea_snippet, user_id=user_id, db_path=db_path)
     update_session(session_id, status="ready", session_type="other", db_path=db_path)
     add_message(session_id, "user", cleaned, db_path=db_path)
     add_message(session_id, "assistant", json.dumps(parsed), db_path=db_path)

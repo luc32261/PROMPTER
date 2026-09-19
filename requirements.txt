@@ -2,3 +2,5 @@ flask
 groq
 python-dotenv
 pytest
+flask-limiter
+gunicorn

@@ -5,6 +5,7 @@ import pytest
 from flask.testing import FlaskClient
 
 from app import create_app
+from db import create_user
 from services.builder import ModelOutputError
 
 
@@ -14,7 +15,14 @@ def client(tmp_path: Path) -> FlaskClient:
     test_db = tmp_path / "test_api.db"
     test_app = create_app(db_path=test_db)
     test_app.config["TESTING"] = True
-    return test_app.test_client()
+    test_app.config["RATELIMIT_ENABLED"] = False
+    user_id = create_user("testuser", "mock_hash", db_path=test_db)
+    test_client = test_app.test_client()
+    with test_client.session_transaction() as sess:
+        sess["authenticated"] = True
+        sess["user_id"] = user_id
+        sess["username"] = "testuser"
+    return test_client
 
 
 def test_health_route(client: FlaskClient) -> None:
