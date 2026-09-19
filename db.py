@@ -146,6 +146,11 @@ def create_session(
     """Create a new session with an initial idea and optional user owner."""
     with get_connection(db_path) as conn:
         if user_id is not None:
+            user_row = conn.execute("SELECT id FROM users WHERE id = ?;", (user_id,)).fetchone()
+            if not user_row:
+                user_id = None
+
+        if user_id is not None:
             cursor = conn.execute(
                 "INSERT INTO sessions (idea, status, user_id) VALUES (?, 'asking', ?);",
                 (idea, user_id),

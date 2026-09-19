@@ -200,6 +200,10 @@
     async function loadHistory() {
         try {
             const resp = await fetch("/api/sessions");
+            if (resp.status === 401) {
+                window.location.href = "/login";
+                return;
+            }
             if (!resp.ok) return;
             allSessions = await resp.json();
             renderFilteredHistory();
@@ -302,6 +306,10 @@
 
         try {
             const resp = await fetch("/api/sessions/" + sessionId);
+            if (resp.status === 401) {
+                window.location.href = "/login";
+                return;
+            }
             if (!resp.ok) {
                 throw new Error("Failed to load session");
             }
@@ -742,6 +750,10 @@
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ prompt: text }),
                         });
+                        if (resp.status === 401) {
+                            window.location.href = "/login";
+                            return;
+                        }
                         const data = await resp.json();
                         if (!resp.ok) {
                             throw new Error(data.error || "Failed to improve prompt");
@@ -769,6 +781,10 @@
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ idea: text }),
                         });
+                        if (resp.status === 401) {
+                            window.location.href = "/login";
+                            return;
+                        }
 
                         const data = await resp.json();
                         if (!resp.ok) {
@@ -799,6 +815,10 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ text: text, skip: false }),
                     });
+                    if (resp.status === 401) {
+                        window.location.href = "/login";
+                        return;
+                    }
 
                     const data = await resp.json();
                     if (!resp.ok) {
@@ -831,6 +851,10 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ skip: true }),
                 });
+                if (resp.status === 401) {
+                    window.location.href = "/login";
+                    return;
+                }
 
                 const data = await resp.json();
                 if (!resp.ok) {

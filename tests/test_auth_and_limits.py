@@ -258,3 +258,23 @@ def test_rate_limiting_on_llm_routes(authenticated_client: FlaskClient) -> None:
         resp_blocked = authenticated_client.post("/api/sessions", json={"idea": "Blocked idea"})
         assert resp_blocked.status_code == 429
         assert resp_blocked.get_json() == {"error": "Rate limit exceeded"}
+
+
+def test_stale_session_handling(auth_app) -> None:
+    """Verify stale session cookies with deleted/non-existent user IDs are cleared and rejected."""
+    client = auth_app.test_client()
+    with client.session_transaction() as sess:
+        sess["authenticated"] = True
+        sess["user_id"] = 999999  # Non-existent user
+        sess["username"] = "ghost_user"
+
+    # API request should return 401 and clear session
+    resp_api = client.get("/api/sessions")
+    assert resp_api.status_code == 401
+    assert resp_api.get_json() == {"error": "Unauthorized"}
+
+    # Page request should redirect to /login
+    resp_page = client.get("/")
+    assert resp_page.status_code == 302
+    assert "/login" in resp_page.headers["Location"]
+

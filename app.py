@@ -88,10 +88,20 @@ def create_app(
         if request.path in {"/login", "/register", "/logout"} or request.path.startswith("/static/"):
             return None
 
-        if not session.get("authenticated") or not session.get("user_id"):
+        user_id = session.get("user_id")
+        if not session.get("authenticated") or not user_id:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for("login_page"))
+
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Unauthorized"}), 401
+            return redirect(url_for("login_page"))
+
         return None
 
     @app.route("/register", methods=["GET", "POST"])
