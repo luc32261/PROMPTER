@@ -12,8 +12,8 @@ def get_default_db_path() -> Path:
     """Return configured database path from DATABASE_PATH or default to data/app.db."""
     env_path = os.getenv("DATABASE_PATH")
     base_dir = Path(__file__).resolve().parent
-    if env_path:
-        p = Path(env_path)
+    if env_path and env_path.strip():
+        p = Path(env_path.strip())
         if not p.is_absolute():
             return (base_dir / p).resolve()
         return p.resolve()
@@ -83,13 +83,16 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
 
 def init_db(db_path: str | Path | None = None) -> None:
     """Initialize database tables according to the spec schema and apply migrations."""
-    with get_connection(db_path) as conn:
-        conn.executescript(SCHEMA)
-        # Check if user_id column exists in sessions table for existing databases
-        cursor = conn.execute("PRAGMA table_info(sessions);")
-        columns = [row["name"] for row in cursor.fetchall()]
-        if "user_id" not in columns:
-            conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
+    try:
+        with get_connection(db_path) as conn:
+            conn.executescript(SCHEMA)
+            # Check if user_id column exists in sessions table for existing databases
+            cursor = conn.execute("PRAGMA table_info(sessions);")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "user_id" not in columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
+    except sqlite3.OperationalError:
+        pass
 
 
 def create_user(
