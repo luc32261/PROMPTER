@@ -11,9 +11,13 @@ load_dotenv()
 def get_default_db_path() -> Path:
     """Return configured database path from DATABASE_PATH or default to data/app.db."""
     env_path = os.getenv("DATABASE_PATH")
+    base_dir = Path(__file__).resolve().parent
     if env_path:
-        return Path(env_path).resolve()
-    return Path(__file__).resolve().parent / "data" / "app.db"
+        p = Path(env_path)
+        if not p.is_absolute():
+            return (base_dir / p).resolve()
+        return p.resolve()
+    return base_dir / "data" / "app.db"
 
 
 DEFAULT_DB_PATH = get_default_db_path()
@@ -53,7 +57,7 @@ CREATE TABLE IF NOT EXISTS prompts (
 
 
 def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
-    """Create a database connection with foreign keys enabled."""
+    """Create a database connection with foreign keys enabled and WAL mode."""
     if db_path is None:
         target = DEFAULT_DB_PATH
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -66,8 +70,13 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
         if path_str != ":memory:":
             Path(path_str).parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(path_str)
+    conn = sqlite3.connect(path_str, timeout=30.0)
     conn.execute("PRAGMA foreign_keys = ON;")
+    if path_str != ":memory:":
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+        except sqlite3.OperationalError:
+            pass
     conn.row_factory = sqlite3.Row
     return conn
 

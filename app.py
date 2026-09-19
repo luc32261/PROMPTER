@@ -78,6 +78,7 @@ def create_app(
     @app.errorhandler(Exception)
     def handle_unexpected_exception(err: Exception) -> tuple[Response, int]:
         """Handle unexpected server exceptions."""
+        app.logger.error(f"Unhandled exception: {err}", exc_info=True)
         return jsonify({"error": "Internal Server Error"}), 500
 
     @app.before_request
