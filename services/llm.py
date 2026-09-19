@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 _client = None
 _last_finish_reason: str | None = None
-MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 def get_last_finish_reason() -> str | None:
