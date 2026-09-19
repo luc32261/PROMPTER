@@ -43,23 +43,35 @@ def parse_reply(raw: str, force_ready: bool) -> dict[str, Any] | None:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
 
+    # Extract JSON object if surrounded by markdown or commentary
+    match = re.search(r"(\{[\s\S]*\})", text)
+    extracted = match.group(1) if match else text
+
     data = None
     try:
-        data = json.loads(text)
+        data = json.loads(extracted)
     except (json.JSONDecodeError, TypeError):
         # Attempt recovery on common trailing LLM JSON glitches
-        cleaned = re.sub(r'",\s*"*\}\}\s*$', '"}', text)
+        cleaned = re.sub(r'",\s*"*\}\}\s*$', '"}', extracted)
         cleaned = re.sub(r',\s*\}', '}', cleaned)
         try:
             data = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError):
-            return None
+            try:
+                data = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                return None
 
     if not isinstance(data, dict):
         return None
 
+    # Handle alternate prompt keys (e.g. "prompt" instead of "final_prompt")
+    if "prompt" in data and "final_prompt" not in data:
+        data["final_prompt"] = data["prompt"]
+
     status = data.get("status")
-    if status == "ready" and isinstance(data.get("final_prompt"), str) and data.get("final_prompt", "").strip():
+    if (status == "ready" or (status is None and "final_prompt" in data)) and isinstance(data.get("final_prompt"), str) and data.get("final_prompt", "").strip():
+        data["status"] = "ready"
         return data
     if status == "ask" and not force_ready and isinstance(data.get("question"), str) and data.get("question", "").strip():
         return data
@@ -113,20 +125,38 @@ def run_turn(
     if parsed is None:
         finish_reason = get_last_finish_reason()
         print(f"[parse_reply failed] finish_reason={finish_reason}\nraw={raw}", flush=True)
+        retry_instruction = (
+            "Your last reply was invalid. Generate the final prompt now. status MUST be 'ready' with 'final_prompt'."
+            if force_ready
+            else "Your last reply was invalid. Return only valid JSON in the required shape."
+        )
         retry_messages = list(messages_for_llm) + [
             {"role": "assistant", "content": raw},
-            {
-                "role": "system",
-                "content": "Your last reply was invalid. Return only valid JSON in the required shape.",
-            },
+            {"role": "system", "content": retry_instruction},
         ]
         retry_raw = call_llm(retry_messages, json_mode=True, max_tokens=4000)
         parsed = parse_reply(retry_raw, force_ready=force_ready)
+        raw_to_save = retry_raw
+
+        if parsed is None and force_ready:
+            candidate = retry_raw or raw
+            if candidate and ("## Role" in candidate or "## Task" in candidate or len(candidate.strip()) > 100):
+                parsed = {
+                    "status": "ready",
+                    "type": session["type"] if session and session["type"] else "other",
+                    "final_prompt": candidate.strip(),
+                }
+                raw_to_save = json.dumps(parsed)
+            else:
+                fallback_ask = parse_reply(candidate, force_ready=False)
+                if fallback_ask:
+                    parsed = fallback_ask
+                    raw_to_save = candidate
+
         if parsed is None:
             finish_reason = get_last_finish_reason()
             print(f"[parse_reply retry failed] finish_reason={finish_reason}\nretry_raw={retry_raw}", flush=True)
             raise ModelOutputError("Model returned invalid output")
-        raw_to_save = retry_raw
     else:
         raw_to_save = raw
 
