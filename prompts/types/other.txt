@@ -1,0 +1,2 @@
+TYPE HINTS (other)
+Use the general rules only. Infer the best structure from the idea itself.

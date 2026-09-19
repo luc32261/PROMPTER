@@ -1,0 +1,3 @@
+TYPE HINTS (writing)
+Pin down: what is being written, audience, tone/voice, length, format, and what to
+avoid. If the user has a sample or draft, the prompt should tell the AI to match it.

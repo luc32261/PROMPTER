@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Mobile Header -->
+        <header class="mobile-header">
+            <button id="btn-toggle-sidebar" class="icon-button" aria-label="Toggle navigation">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <span class="mobile-title">Prompt Builder</span>
+        </header>
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    <h1>Prompt Builder</h1>
+                </div>
+                <div class="sidebar-actions">
+                    <button id="btn-new-prompt" class="btn btn-primary btn-new">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>New prompt</span>
+                    </button>
+                    <button id="btn-toggle-mode" class="btn btn-mode" aria-pressed="false" title="Toggle between prompt builder and prompt improver">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20h9"></path>
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                        </svg>
+                        <span>Improve mode</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="sidebar-search">
+                <div class="search-wrapper">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="search-input" class="search-input" placeholder="Search ideas..." aria-label="Search prompt ideas">
+                </div>
+            </div>
+
+            <div class="filter-chips" role="group" aria-label="Filter history by type">
+                <button class="chip active" data-filter="all">All</button>
+                <button class="chip" data-filter="study">Study</button>
+                <button class="chip" data-filter="writing">Writing</button>
+                <button class="chip" data-filter="research">Research</button>
+                <button class="chip" data-filter="other">Other</button>
+            </div>
+
+            <div class="sidebar-section-title">History</div>
+            <div id="history-list" class="history-list" role="list">
+                <!-- History items populated via JS -->
+            </div>
+        </aside>
+
+        <!-- Overlay for mobile sidebar -->
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+        <!-- Main Chat Area -->
+        <main class="main-content">
+            <div id="chat-container" class="chat-container">
+                <!-- Empty State -->
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h2>What do you want a prompt for?</h2>
+                    <p>Enter a rough idea below. The assistant will ask a few quick questions to craft an optimal, model-agnostic prompt.</p>
+                    <div class="example-pills">
+                        <button class="pill-btn" data-idea="Help me study linear algebra for college exams, with practice problems and step-by-step solutions">📚 Study linear algebra</button>
+                        <button class="pill-btn" data-idea="Write a polite yet firm resignation letter to my manager with a 2-week notice period">✍️ Resignation letter</button>
+                        <button class="pill-btn" data-idea="Research quantum computing vs classical computing in drug discovery and molecular simulations">🔬 Quantum drug discovery</button>
+                    </div>
+                </div>
+
+                <!-- Chat Message List -->
+                <div id="message-list" class="message-list" style="display: none;">
+                    <!-- Message bubbles injected dynamically -->
+                </div>
+
+                <!-- Thinking / Loading Indicator -->
+                <div id="loading-indicator" class="loading-bubble" style="display: none;">
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span class="loading-text">Thinking...</span>
+                </div>
+            </div>
+
+            <!-- Chat Footer & Input Controls -->
+            <footer class="chat-footer">
+                <!-- Skip button container -->
+                <div id="skip-container" class="skip-container" style="display: none;">
+                    <button id="btn-skip" class="btn btn-secondary btn-skip">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                            <line x1="19" y1="5" x2="19" y2="19"></line>
+                        </svg>
+                        <span>Skip questions, just build it</span>
+                    </button>
+                </div>
+
+                <!-- Input area -->
+                <div class="input-form">
+                    <textarea 
+                        id="input-text" 
+                        class="input-textarea" 
+                        placeholder="Type your idea or answer... (Enter to send, Shift+Enter for newline)" 
+                        rows="1" 
+                        maxlength="4000"
+                    ></textarea>
+                    <button id="btn-send" class="btn btn-send" aria-label="Send message">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

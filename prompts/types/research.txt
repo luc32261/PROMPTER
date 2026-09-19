@@ -1,0 +1,4 @@
+TYPE HINTS (research)
+Pin down: scope, depth, time frame, what kind of sources are expected, and the output
+structure (overview, comparison table, pros/cons, citations). The prompt should tell
+the AI to flag uncertainty and not invent sources.

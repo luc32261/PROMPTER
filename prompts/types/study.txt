@@ -1,0 +1,4 @@
+TYPE HINTS (study)
+Pin down: subject and topic, level (school/college/exam prep), goal (understand vs
+memorize vs exam answers), and structure wanted (notes, Q&A, step-by-step, flashcards,
+summary). Ask for examples and exam-style output when relevant.
