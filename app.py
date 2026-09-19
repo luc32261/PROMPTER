@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
@@ -41,6 +42,7 @@ def create_app(
     """Create and configure the Flask application."""
     app = Flask(__name__)
     app.secret_key = os.getenv("SECRET_KEY") or "dev-secret-key-change-in-production"
+    app.permanent_session_lifetime = timedelta(days=30)
     app.config["DEBUG"] = False
     app.config["DB_PATH"] = db_path
 
@@ -158,6 +160,7 @@ def create_app(
         if user_id is None:
             return fail("Could not create account, please try again")
 
+        session.permanent = True
         session["authenticated"] = True
         session["user_id"] = user_id
         session["username"] = username
@@ -202,6 +205,7 @@ def create_app(
         if not user or not check_password_hash(user["password_hash"], password):
             return fail("Invalid username or password")
 
+        session.permanent = True
         session["authenticated"] = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
