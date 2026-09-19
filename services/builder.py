@@ -148,10 +148,25 @@ def run_turn(
                 }
                 raw_to_save = json.dumps(parsed)
             else:
-                fallback_ask = parse_reply(candidate, force_ready=False)
-                if fallback_ask:
-                    parsed = fallback_ask
-                    raw_to_save = candidate
+                force_messages = list(messages_for_llm) + [
+                    {
+                        "role": "user",
+                        "content": (
+                            "You must stop asking questions now. Based on all our conversation above, "
+                            "generate the final prompt immediately in the required JSON shape: "
+                            '{"status": "ready", "type": "' + (session["type"] or "other") + '", "final_prompt": "## Role\\n...\\n## Task\\n..."}'
+                        ),
+                    }
+                ]
+                force_raw = call_llm(force_messages, json_mode=True, max_tokens=4000)
+                parsed = parse_reply(force_raw, force_ready=True)
+                if parsed is not None:
+                    raw_to_save = force_raw
+                else:
+                    fallback_ask = parse_reply(candidate, force_ready=False)
+                    if fallback_ask:
+                        parsed = fallback_ask
+                        raw_to_save = candidate
 
         if parsed is None:
             finish_reason = get_last_finish_reason()

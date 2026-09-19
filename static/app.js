@@ -386,10 +386,21 @@
     // Render assistant message content (parses JSON)
     function renderAssistantMessage(rawJson, sessionPrompts) {
         let parsed = null;
-        try {
-            parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-        } catch (e) {
-            parsed = null;
+        if (typeof rawJson === "object" && rawJson !== null) {
+            parsed = rawJson;
+        } else if (typeof rawJson === "string") {
+            try {
+                parsed = JSON.parse(rawJson);
+            } catch (e) {
+                const match = rawJson.match(/(\{[\s\S]*\})/);
+                if (match) {
+                    try {
+                        parsed = JSON.parse(match[1]);
+                    } catch (e2) {
+                        parsed = null;
+                    }
+                }
+            }
         }
 
         if (!parsed) {
