@@ -79,7 +79,7 @@ def create_app(
     def handle_unexpected_exception(err: Exception) -> tuple[Response, int]:
         """Handle unexpected server exceptions."""
         app.logger.error(f"Unhandled exception: {err}", exc_info=True)
-        return jsonify({"error": "Internal Server Error"}), 500
+        return jsonify({"error": str(err) or "Internal Server Error"}), 500
 
     @app.before_request
     def require_login() -> Response | None:

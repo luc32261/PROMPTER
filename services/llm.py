@@ -24,12 +24,16 @@ def call_llm(
     global _client, _last_finish_reason
     _last_finish_reason = None
     api_key = os.getenv("GROQ_API_KEY")
+    if api_key:
+        api_key = api_key.strip().strip("'\"")
     if not api_key:
-        raise ValueError("GROQ_API_KEY is not set. Please set it in your .env file.")
+        raise ValueError("GROQ_API_KEY is not set. Please add it in Render Environment Variables.")
     if _client is None or getattr(_client, "api_key", None) != api_key:
         _client = Groq(api_key=api_key)
 
     model = os.getenv("GROQ_MODEL", MODEL)
+    if model:
+        model = model.strip().strip("'\"")
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
