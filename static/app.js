@@ -2,6 +2,31 @@
 (function () {
     "use strict";
 
+    // Wrap window.fetch to automatically include CSRF token for mutating requests
+    const originalFetch = window.fetch;
+    window.fetch = function (url, options = {}) {
+        options = options || {};
+        const method = (options.method || "GET").toUpperCase();
+        if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+            options.headers = options.headers || {};
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+            if (token) {
+                if (options.headers instanceof Headers) {
+                    if (!options.headers.has("X-CSRF-Token")) {
+                        options.headers.set("X-CSRF-Token", token);
+                    }
+                } else if (Array.isArray(options.headers)) {
+                    options.headers.push(["X-CSRF-Token", token]);
+                } else {
+                    if (!options.headers["X-CSRF-Token"]) {
+                        options.headers["X-CSRF-Token"] = token;
+                    }
+                }
+            }
+        }
+        return originalFetch.call(this, url, options);
+    };
+
     // State
     let currentSessionId = null;
     let currentSessionStatus = null;
@@ -544,7 +569,11 @@
                 updateVersionView();
                 scrollToBottom();
             } catch (err) {
-                alert("Refinement failed: " + err.message);
+                if (err.message === "Daily limit reached") {
+                    alert("You have reached your daily limit of LLM calls. Your limit will reset at 00:00 UTC.");
+                } else {
+                    alert("Refinement failed: " + err.message);
+                }
             } finally {
                 btnTrigger.innerHTML = originalHtml;
                 btnTrigger.disabled = false;
@@ -621,7 +650,11 @@
                 card.insertBefore(scorePanel, pre);
                 scrollToBottom();
             } catch (err) {
-                alert("Scoring failed: " + err.message);
+                if (err.message === "Daily limit reached") {
+                    alert("You have reached your daily limit of LLM calls. Your limit will reset at 00:00 UTC.");
+                } else {
+                    alert("Scoring failed: " + err.message);
+                }
             } finally {
                 btnScore.innerHTML = originalHtml;
                 btnScore.disabled = false;
@@ -717,8 +750,14 @@
         const banner = document.createElement("div");
         banner.className = "error-bubble";
 
+        let friendlyMessage = message;
+        const isDailyLimit = message === "Daily limit reached";
+        if (isDailyLimit) {
+            friendlyMessage = "You have reached your daily limit of LLM calls. Your limit will reset at 00:00 UTC.";
+        }
+
         const textSpan = document.createElement("span");
-        textSpan.textContent = message;
+        textSpan.textContent = friendlyMessage;
 
         const btnRetry = document.createElement("button");
         btnRetry.className = "btn-retry";
@@ -729,7 +768,9 @@
         });
 
         banner.appendChild(textSpan);
-        banner.appendChild(btnRetry);
+        if (!isDailyLimit) {
+            banner.appendChild(btnRetry);
+        }
         errorRow.appendChild(banner);
         messageList.appendChild(errorRow);
         scrollToBottom();

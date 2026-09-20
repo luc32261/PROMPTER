@@ -16,6 +16,7 @@ def client(tmp_path: Path) -> FlaskClient:
     test_app = create_app(db_path=test_db)
     test_app.config["TESTING"] = True
     test_app.config["RATELIMIT_ENABLED"] = False
+    test_app.config["CSRF_ENABLED"] = False
     user_id = create_user("testuser", "mock_hash", db_path=test_db)
     test_client = test_app.test_client()
     with test_client.session_transaction() as sess:

@@ -39,6 +39,41 @@ cp .env.example .env
 | `APP_PASSWORD` | Shared default password fallback. | `admin` |
 | `SECRET_KEY` | Secret key used by Flask to sign session cookies. | `dev-secret-key-change-in-production` |
 | `DATABASE_PATH` | Path to the SQLite database file. | `data/app.db` |
+| `ADMIN_USERNAME` | Username for the single admin account. | `admin` |
+| `ADMIN_PASSWORD` | Password for the single admin account. | *None* |
+| `ADMIN_GATE_PASSWORD` | Password for the first-layer admin gate. | *None* |
+| `DAILY_LIMIT` | Default daily limit of LLM calls per user (UTC day). | `100` |
+| `FLASK_ENV` | Environment mode (`production` or `development`). Setting to `production` enables HTTPS secure cookies (`SESSION_COOKIE_SECURE=True`) and enforces mandatory admin variables. | `development` |
+
+---
+
+## Admin
+
+The application includes an administrative dashboard and management system with multi-layer security:
+
+- **Two-Layer Entry & Gate**:
+  - A subtle "Admin" link on the login page leads to `/admin/gate`, protected by `ADMIN_GATE_PASSWORD`.
+  - Passing the gate grants a 10-minute window to access `/admin/login`, requiring `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+  - Logging in successfully grants a 30-minute session to access `/admin`.
+  - Non-admin users or unauthorized requests to `/admin` routes return HTTP 404 (`{"error": "Not Found"}`).
+  - Both gate and login endpoints enforce rate limiting (max 5 failed attempts per 15 minutes).
+- **User Management**:
+  - Single admin model: only `ADMIN_USERNAME` can hold the admin role; public registration cannot create or elevate admins.
+  - View all user accounts with creation date, last login, prompt count, calls today, daily limit, and status.
+  - Per-user actions (CSRF-protected POST routes):
+    - **Disable / Enable**: Toggles user active state (disabling invalidates active sessions).
+    - **Force Logout**: Bumps user session version to invalidate all active logins.
+    - **Reset Password**: Generates a random temporary password shown once to the admin (only the hash is stored).
+    - **Delete User**: Cascades deletion of the user and their sessions, messages, and prompts.
+    - Admins cannot disable, force logout, or delete their own account.
+- **Usage & Daily Quotas**:
+  - Daily LLM call tracking partitioned by UTC day (`00:00 UTC` reset).
+  - Configurable global fallback (`DAILY_LIMIT`, default 100) and custom per-user limits editable from `/admin`.
+  - The admin account is exempt from daily limits.
+- **Audit Logging**:
+  - Tracks the last 50 administrative and security events: gate successes/failures, admin login successes/failures, status changes, force logouts, password resets, limit changes, and deletions.
+  - Stores usernames instead of foreign keys so audit history survives user deletion.
+  - Passwords are never stored in the audit log.
 
 ---
 

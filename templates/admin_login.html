@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account - Prompt Builder</title>
+    <title>Admin Login - Prompt Builder</title>
     <link rel="stylesheet" href="/static/style.css">
     <style>
-        .register-page {
+        .admin-login-page {
             display: flex;
             align-items: center;
             justify-content: center;
@@ -16,9 +16,9 @@
             padding: 20px;
         }
 
-        .register-card {
+        .admin-login-card {
             width: 100%;
-            max-width: 400px;
+            max-width: 380px;
             background-color: var(--bg-surface);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
@@ -29,7 +29,7 @@
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
         }
 
-        .register-header {
+        .admin-login-header {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -37,16 +37,22 @@
             gap: 8px;
         }
 
-        .register-header .logo {
-            font-size: 1.4rem;
+        .admin-login-header .admin-icon {
+            color: var(--accent-primary);
+            margin-bottom: 4px;
         }
 
-        .register-subtitle {
+        .admin-login-header h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .admin-login-subtitle {
             font-size: 0.88rem;
             color: var(--text-secondary);
         }
 
-        .register-form {
+        .admin-login-form {
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -79,7 +85,7 @@
             border-color: var(--accent-primary);
         }
 
-        .register-error {
+        .admin-login-error {
             background-color: var(--danger-subtle);
             border: 1px solid var(--danger-color);
             color: #fca5a5;
@@ -89,90 +95,80 @@
             text-align: center;
         }
 
-        .btn-register {
+        .btn-admin-login {
             width: 100%;
             padding: 10px;
             font-size: 0.95rem;
             margin-top: 4px;
         }
 
-        .auth-footer {
+        .admin-login-footer {
             margin-top: 8px;
             text-align: center;
             font-size: 0.88rem;
             color: var(--text-secondary);
         }
 
-        .auth-link {
+        .admin-login-link {
             color: var(--accent-primary);
             text-decoration: none;
             font-weight: 500;
         }
 
-        .auth-link:hover {
+        .admin-login-link:hover {
             text-decoration: underline;
         }
     </style>
 </head>
 <body>
-    <div class="register-page">
-        <div class="register-card">
-            <div class="register-header">
-                <div class="logo">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+    <div class="admin-login-page">
+        <div class="admin-login-card">
+            <div class="admin-login-header">
+                <div class="admin-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                     </svg>
-                    <h1>Prompt Builder</h1>
                 </div>
-                <p class="register-subtitle">Create an account to save your prompts</p>
+                <h1>Admin Authentication</h1>
+                <p class="admin-login-subtitle">Sign in with the administrator account</p>
             </div>
 
             {% if error %}
-            <div class="register-error">{{ error }}</div>
+            <div class="admin-login-error">{{ error }}</div>
             {% endif %}
 
-            <form class="register-form" method="POST" action="/register">
+            <form class="admin-login-form" method="POST" action="/admin/login">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
-                    <label class="form-label" for="username">Username</label>
+                    <label class="form-label" for="username">Admin Username</label>
                     <input 
                         type="text" 
                         id="username" 
                         name="username" 
                         class="form-input" 
-                        placeholder="Choose a username" 
+                        placeholder="Enter admin username" 
                         value="{{ username or '' }}"
                         required 
-                        autofocus
+                        {% if not username %}autofocus{% endif %}
                     >
                 </div>
                 <div class="form-group">
-                    <label class="form-label" for="password">Password (min 6 characters)</label>
+                    <label class="form-label" for="password">Password</label>
                     <input 
                         type="password" 
                         id="password" 
                         name="password" 
                         class="form-input" 
-                        placeholder="Choose a password" 
+                        placeholder="Enter password" 
                         required 
+                        {% if username %}autofocus{% endif %}
                     >
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="confirm_password">Confirm Password</label>
-                    <input 
-                        type="password" 
-                        id="confirm_password" 
-                        name="confirm_password" 
-                        class="form-input" 
-                        placeholder="Confirm password" 
-                        required 
-                    >
-                </div>
-                <button type="submit" class="btn btn-primary btn-register">Create account</button>
+                <button type="submit" class="btn btn-primary btn-admin-login">Sign In to Dashboard</button>
             </form>
 
-            <div class="auth-footer">
-                Already have an account? <a href="/login" class="auth-link">Sign in</a>
+            <div class="admin-login-footer">
+                <a href="/login" class="admin-login-link">Return to user login</a>
             </div>
         </div>
     </div>

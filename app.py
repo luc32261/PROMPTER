@@ -1,25 +1,45 @@
+import hmac
 import os
+import secrets
+import time
 from datetime import timedelta
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, current_app, jsonify, redirect, render_template, request, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import (
+    clear_failed_attempts,
     create_user,
     delete_session,
+    delete_user_cascade,
     get_all_prompts,
+    get_failed_attempts_count,
     get_final_prompt,
     get_messages,
+    get_recent_admin_audit,
     get_session,
+    get_total_usage_today,
     get_user_by_id,
     get_user_by_username,
+    get_user_usage_today,
+    increment_user_session_version,
     init_db,
     list_sessions,
+    list_users_with_stats,
+    record_admin_audit,
+    record_failed_attempt,
+    record_llm_usage,
+    reset_user_password,
+    set_user_daily_limit,
+    sync_admin,
+    toggle_user_active,
+    update_user_login,
 )
 from services.builder import (
     ModelOutputError,
@@ -35,30 +55,106 @@ load_dotenv()
 MAX_INPUT_LENGTH = 4000
 
 
+def check_and_enforce_daily_limit(user_id: int | None, db_path: str | Path | None = None) -> tuple[Response, int] | None:
+    """Check if the user has reached their daily LLM limit for the current UTC day. Admin is exempt."""
+    if not user_id:
+        return None
+    user = get_user_by_id(user_id, db_path=db_path)
+    if not user or user["role"] == "admin":
+        return None
+
+    # Fallback to DAILY_LIMIT env var, default 100
+    env_default = 100
+    env_limit_str = os.getenv("DAILY_LIMIT", "100").strip()
+    if env_limit_str.isdigit():
+        env_default = int(env_limit_str)
+
+    effective_limit = user["daily_limit"] if user["daily_limit"] is not None else env_default
+
+    current_usage = get_user_usage_today(user_id, db_path=db_path)
+    if current_usage >= effective_limit:
+        return jsonify({"error": "Daily limit reached"}), 429
+    return None
+
+
+def admin_required(f: Any) -> Any:
+    """Ensure the user is authenticated, has the 'admin' role, and valid admin_until, otherwise return 404."""
+    @wraps(f)
+    def decorated_function(*args: Any, **kwargs: Any) -> Any:
+        user_id = session.get("user_id")
+        admin_until = session.get("admin_until", 0)
+        if not session.get("authenticated") or not user_id:
+            return jsonify({"error": "Not Found"}), 404
+
+        if not isinstance(admin_until, (int, float)) or admin_until <= time.time():
+            return jsonify({"error": "Not Found"}), 404
+
+        current_db = current_app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user or user["is_active"] == 0 or user["role"] != "admin":
+            return jsonify({"error": "Not Found"}), 404
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def get_limiter_key() -> str:
+    """Rate limit key function using user_id if authenticated, falling back to IP."""
+    user_id = session.get("user_id")
+    if user_id:
+        return f"user:{user_id}"
+    return get_remote_address()
+
+
 def create_app(
     db_path: str | Path | None = None,
     test_config: dict[str, Any] | None = None,
 ) -> Flask:
     """Create and configure the Flask application."""
+    is_prod = (
+        os.getenv("FLASK_ENV", "").lower() == "production"
+        or os.getenv("ENV", "").lower() == "production"
+        or os.getenv("ENVIRONMENT", "").lower() == "production"
+        or (test_config and str(test_config.get("ENV", "")).lower() == "production")
+        or (test_config and str(test_config.get("FLASK_ENV", "")).lower() == "production")
+    )
+    if is_prod:
+        admin_username = os.getenv("ADMIN_USERNAME", "").strip()
+        admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
+        admin_gate_password = os.getenv("ADMIN_GATE_PASSWORD", "").strip()
+        if not admin_username or not admin_password or not admin_gate_password:
+            raise RuntimeError(
+                "ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_GATE_PASSWORD environment variables are required in production."
+            )
+
     app = Flask(__name__)
     app.secret_key = os.getenv("SECRET_KEY") or "dev-secret-key-change-in-production"
     app.permanent_session_lifetime = timedelta(days=30)
     app.config["DEBUG"] = False
     app.config["DB_PATH"] = db_path
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = is_prod
 
     if test_config:
         app.config.update(test_config)
 
+    @app.context_processor
+    def inject_csrf_token() -> dict[str, Any]:
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_hex(32)
+        return {"csrf_token": session["csrf_token"]}
+
     # Initialize rate limiter
     limiter = Limiter(
-        get_remote_address,
+        get_limiter_key,
         app=app,
         default_limits=[],
         storage_uri=app.config.get("RATELIMIT_STORAGE_URI", "memory://"),
     )
 
-    # Ensure database schema is initialized
+    # Ensure database schema is initialized and single admin is synced
     init_db(db_path)
+    sync_admin(db_path)
 
     @app.errorhandler(429)
     def handle_ratelimit_exceeded(err: Any) -> tuple[Response, int]:
@@ -85,14 +181,37 @@ def create_app(
 
     @app.before_request
     def require_login() -> Response | None:
-        """Protect all /api routes and the main page with session authentication."""
+        """Handle CSRF validation and session authentication for protected routes."""
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_hex(32)
+
+        # CSRF protection for all POST, PUT, PATCH, DELETE requests
+        if app.config.get("CSRF_ENABLED", True) and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            token = (
+                request.headers.get("X-CSRF-Token")
+                or request.form.get("csrf_token")
+                or (
+                    request.is_json
+                    and isinstance(request.get_json(silent=True), dict)
+                    and request.get_json(silent=True).get("csrf_token")
+                )
+            )
+            expected = session.get("csrf_token")
+            if not expected or not token or not hmac.compare_digest(str(token), str(expected)):
+                return jsonify({"error": "CSRF token missing or invalid"}), 403
+
         # Whitelisted endpoints
-        if request.path in {"/login", "/register", "/logout"} or request.path.startswith("/static/"):
+        if (
+            request.path in {"/login", "/register", "/logout", "/admin/gate", "/admin/login", "/admin/logout"}
+            or request.path.startswith("/static/")
+        ):
             return None
 
         user_id = session.get("user_id")
         if not session.get("authenticated") or not user_id:
-            if request.path.startswith("/api/"):
+            if request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
+                return jsonify({"error": "Not Found"}), 404
+            if request.path.startswith("/api/") or request.is_json:
                 return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for("login_page"))
 
@@ -100,10 +219,25 @@ def create_app(
         user = get_user_by_id(user_id, db_path=current_db)
         if not user:
             session.clear()
-            if request.path.startswith("/api/"):
+            if request.path.startswith("/api/") or request.is_json:
                 return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for("login_page"))
 
+        if user["is_active"] == 0:
+            session.clear()
+            if request.path.startswith("/api/") or request.is_json:
+                return jsonify({"error": "account disabled"}), 401
+            return render_template("login.html", error="account disabled"), 401
+
+        session_ver = session.get("session_version", 0)
+        if session_ver != user["session_version"]:
+            session.clear()
+            if request.path.startswith("/api/") or request.is_json:
+                return jsonify({"error": "logged out by admin"}), 401
+            return render_template("login.html", error="logged out by admin"), 401
+
+        session["role"] = user["role"]
+        session["username"] = user["username"]
         return None
 
     @app.route("/register", methods=["GET", "POST"])
@@ -111,7 +245,12 @@ def create_app(
         """Render register page or register a new user account."""
         if request.method == "GET":
             if session.get("authenticated") and session.get("user_id"):
-                return redirect(url_for("index"))
+                current_db = app.config.get("DB_PATH")
+                user = get_user_by_id(session.get("user_id"), db_path=current_db)
+                if not user or user["is_active"] == 0 or session.get("session_version", 0) != user["session_version"]:
+                    session.clear()
+                else:
+                    return redirect(url_for("index"))
             return render_template("register.html")
 
         # Read credentials (JSON or Form)
@@ -150,20 +289,29 @@ def create_app(
         if confirm_password is not None and password != confirm_password:
             return fail("Passwords do not match")
 
+        # Block registering ADMIN_USERNAME (case-insensitive) with a generic message
+        admin_username = os.getenv("ADMIN_USERNAME", "").strip()
+        if admin_username and username.lower() == admin_username.lower():
+            return fail("username unavailable")
+
         current_db = app.config.get("DB_PATH")
         existing_user = get_user_by_username(username, db_path=current_db)
         if existing_user:
             return fail("Username is already taken")
 
         password_hash = generate_password_hash(password)
-        user_id = create_user(username, password_hash, db_path=current_db)
+        user_id = create_user(username, password_hash, role="user", db_path=current_db)
         if user_id is None:
             return fail("Could not create account, please try again")
+
+        update_user_login(user_id, db_path=current_db)
 
         session.permanent = True
         session["authenticated"] = True
         session["user_id"] = user_id
         session["username"] = username
+        session["role"] = "user"
+        session["session_version"] = 0
 
         if request.is_json:
             return jsonify({"ok": True, "user_id": user_id, "username": username}), 201
@@ -174,7 +322,12 @@ def create_app(
         """Render login page on GET or verify username and password on POST."""
         if request.method == "GET":
             if session.get("authenticated") and session.get("user_id"):
-                return redirect(url_for("index"))
+                current_db = app.config.get("DB_PATH")
+                user = get_user_by_id(session.get("user_id"), db_path=current_db)
+                if not user or user["is_active"] == 0 or session.get("session_version", 0) != user["session_version"]:
+                    session.clear()
+                else:
+                    return redirect(url_for("index"))
             return render_template("login.html")
 
         # Handle POST credentials (JSON or Form)
@@ -205,10 +358,19 @@ def create_app(
         if not user or not check_password_hash(user["password_hash"], password):
             return fail("Invalid username or password")
 
+        if user["is_active"] == 0:
+            return fail("account disabled")
+
+        update_user_login(user["id"], db_path=current_db)
+
         session.permanent = True
         session["authenticated"] = True
         session["user_id"] = user["id"]
         session["username"] = user["username"]
+        session["role"] = user["role"]
+        session["session_version"] = user["session_version"]
+        session.pop("admin_until", None)
+        session.pop("gate_until", None)
 
         if request.is_json:
             return jsonify({"ok": True, "user_id": user["id"], "username": user["username"]}), 200
@@ -220,10 +382,326 @@ def create_app(
         session.clear()
         return redirect(url_for("login_page"))
 
+    @app.route("/admin/gate", methods=["GET", "POST"])
+    def admin_gate_page() -> Response | str | tuple[Response, int] | tuple[str, int]:
+        """Admin gate requiring ADMIN_GATE_PASSWORD."""
+        current_db = app.config.get("DB_PATH")
+        ip = get_remote_address()
+        key_ip = f"gate_ip:{ip}"
+
+        if request.method == "GET":
+            if session.get("gate_until", 0) > time.time():
+                return redirect(url_for("admin_login_page"))
+            return render_template("admin_gate.html")
+
+        # Check rate limit: 5 failed attempts per 15 minutes per IP
+        if get_failed_attempts_count(key_ip, 900.0, db_path=current_db) >= 5:
+            record_admin_audit("gate_failure", details=f"Rate limit exceeded (IP: {ip})", db_path=current_db)
+            msg = "Too many failed attempts. Please try again in 15 minutes."
+            if request.is_json:
+                return jsonify({"error": msg}), 429
+            return render_template("admin_gate.html", error=msg), 429
+
+        gate_password = None
+        if request.is_json:
+            data = request.get_json(silent=True)
+            if isinstance(data, dict):
+                gate_password = data.get("gate_password")
+        else:
+            gate_password = request.form.get("gate_password")
+
+        admin_gate_password = os.getenv("ADMIN_GATE_PASSWORD", "").strip()
+        valid = False
+        if admin_gate_password and isinstance(gate_password, str) and gate_password:
+            valid = hmac.compare_digest(gate_password.encode("utf-8"), admin_gate_password.encode("utf-8"))
+
+        if not valid:
+            record_failed_attempt(key_ip, db_path=current_db)
+            record_admin_audit("gate_failure", details=f"Invalid gate password (IP: {ip})", db_path=current_db)
+            if request.is_json:
+                return jsonify({"error": "Invalid gate password"}), 401
+            return render_template("admin_gate.html", error="Invalid gate password"), 401
+
+        clear_failed_attempts(key_ip, db_path=current_db)
+        session["gate_until"] = time.time() + 600  # 10 minutes
+        record_admin_audit("gate_success", details=f"IP: {ip}", db_path=current_db)
+        if request.is_json:
+            return jsonify({"ok": True, "redirect": "/admin/login"}), 200
+        return redirect(url_for("admin_login_page"))
+
+    @app.route("/admin/login", methods=["GET", "POST"])
+    def admin_login_page() -> Response | str | tuple[Response, int] | tuple[str, int]:
+        """Admin login form requiring valid gate_until and ADMIN_USERNAME credentials."""
+        gate_until = session.get("gate_until", 0)
+        if not isinstance(gate_until, (int, float)) or gate_until <= time.time():
+            return jsonify({"error": "Not Found"}), 404
+
+        current_db = app.config.get("DB_PATH")
+        ip = get_remote_address()
+        key_ip = f"admin_ip:{ip}"
+
+        if request.method == "GET":
+            return render_template("admin_login.html")
+
+        # POST
+        username = None
+        password = None
+        if request.is_json:
+            data = request.get_json(silent=True)
+            if isinstance(data, dict):
+                username = data.get("username")
+                password = data.get("password")
+        else:
+            username = request.form.get("username")
+            password = request.form.get("password")
+
+        norm_user = username.strip().lower() if isinstance(username, str) else ""
+        key_account = f"admin_account:{norm_user}" if norm_user else None
+
+        # Check rate limit: 5 failed attempts per 15 minutes per IP and per target account
+        if get_failed_attempts_count(key_ip, 900.0, db_path=current_db) >= 5 or (
+            key_account and get_failed_attempts_count(key_account, 900.0, db_path=current_db) >= 5
+        ):
+            record_admin_audit(
+                "admin_login_failure",
+                admin_username=username.strip() if isinstance(username, str) and username.strip() else None,
+                details=f"Rate limit exceeded (IP: {ip})",
+                db_path=current_db,
+            )
+            msg = "Too many failed attempts. Please try again in 15 minutes."
+            if request.is_json:
+                return jsonify({"error": msg}), 429
+            return render_template("admin_login.html", error=msg, username=username or ""), 429
+
+        def fail_auth() -> tuple[Response, int] | tuple[str, int]:
+            record_failed_attempt(key_ip, db_path=current_db)
+            if key_account:
+                record_failed_attempt(key_account, db_path=current_db)
+            record_admin_audit(
+                "admin_login_failure",
+                admin_username=username.strip() if isinstance(username, str) and username.strip() else None,
+                details=f"IP: {ip}",
+                db_path=current_db,
+            )
+            msg = "Invalid credentials"
+            if request.is_json:
+                return jsonify({"error": msg}), 401
+            return render_template("admin_login.html", error=msg, username=username or ""), 401
+
+        if not isinstance(username, str) or not username.strip() or not isinstance(password, str) or not password:
+            return fail_auth()
+
+        admin_username = os.getenv("ADMIN_USERNAME", "").strip()
+        user = get_user_by_username(username.strip(), db_path=current_db)
+
+        if (
+            not user
+            or user["role"] != "admin"
+            or user["is_active"] != 1
+            or not check_password_hash(user["password_hash"], password)
+            or user["username"].lower() != admin_username.lower()
+        ):
+            return fail_auth()
+
+        clear_failed_attempts(key_ip, db_path=current_db)
+        if key_account:
+            clear_failed_attempts(key_account, db_path=current_db)
+
+        update_user_login(user["id"], db_path=current_db)
+        record_admin_audit(
+            "admin_login_success",
+            admin_username=user["username"],
+            details=f"IP: {ip}",
+            db_path=current_db,
+        )
+
+        session.permanent = True
+        session["authenticated"] = True
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        session["role"] = user["role"]
+        session["session_version"] = user["session_version"]
+        session["admin_until"] = time.time() + 1800  # 30 minutes
+
+        if request.is_json:
+            return jsonify({"ok": True, "redirect": "/admin"}), 200
+        return redirect(url_for("admin_page"))
+
+    @app.route("/admin/logout", methods=["POST"])
+    def admin_logout() -> Response:
+        """Clear admin_until and gate_until flags."""
+        session.pop("admin_until", None)
+        session.pop("gate_until", None)
+        if request.is_json:
+            return jsonify({"ok": True}), 200
+        return redirect(url_for("login_page"))
+
+    @app.route("/api/admin/check", methods=["GET"])
+    @admin_required
+    def admin_check_route() -> Response:
+        """Admin check endpoint requiring admin role."""
+        return jsonify({"ok": True, "admin": True})
+
+    @app.route("/admin", methods=["GET"])
+    @admin_required
+    def admin_page() -> str:
+        """Render the admin user management page."""
+        current_db = app.config.get("DB_PATH")
+        users = list_users_with_stats(db_path=current_db)
+        total_calls_today = get_total_usage_today(db_path=current_db)
+        default_limit = int(os.getenv("DAILY_LIMIT", 100))
+        audit_logs = get_recent_admin_audit(limit=50, db_path=current_db)
+        return render_template(
+            "admin.html",
+            users=users,
+            total_calls_today=total_calls_today,
+            default_limit=default_limit,
+            audit_logs=audit_logs,
+            current_user_id=session.get("user_id"),
+            current_username=session.get("username", "Admin"),
+        )
+
+    @app.route("/admin/users/<int:user_id>/set-limit", methods=["POST"])
+    @admin_required
+    def admin_set_daily_limit(user_id: int) -> tuple[Response, int] | Response:
+        """Set custom daily limit for a user (or None for default fallback)."""
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        data = request.get_json(silent=True) if request.is_json else request.form
+        daily_limit_val = data.get("daily_limit") if isinstance(data, dict) else request.form.get("daily_limit")
+
+        limit_int: int | None = None
+        if daily_limit_val is not None and str(daily_limit_val).strip() != "":
+            try:
+                limit_int = int(daily_limit_val)
+                if limit_int < 0:
+                    return jsonify({"error": "Daily limit must be 0 or greater"}), 400
+            except (ValueError, TypeError):
+                return jsonify({"error": "Invalid daily limit format"}), 400
+
+        try:
+            set_user_daily_limit(user_id, limit_int, db_path=current_db)
+            record_admin_audit(
+                "limit_change",
+                admin_username=session.get("username"),
+                target_username=user["username"],
+                details=f"Daily limit set to {limit_int if limit_int is not None else 'default'}",
+                db_path=current_db,
+            )
+            return jsonify({"ok": True, "daily_limit": limit_int}), 200
+        except ValueError:
+            return jsonify({"error": "User not found"}), 404
+
+    @app.route("/admin/users/<int:user_id>/toggle-status", methods=["POST"])
+    @admin_required
+    def admin_toggle_status(user_id: int) -> tuple[Response, int] | Response:
+        """Toggle user active status. Admin cannot disable themselves."""
+        if user_id == session.get("user_id"):
+            return jsonify({"error": "Admins cannot disable their own account"}), 400
+
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        try:
+            new_status = toggle_user_active(user_id, db_path=current_db)
+            action = "enable" if new_status == 1 else "disable"
+            record_admin_audit(
+                action,
+                admin_username=session.get("username"),
+                target_username=user["username"],
+                details=f"User account {'enabled' if new_status == 1 else 'disabled'}",
+                db_path=current_db,
+            )
+            return jsonify({"ok": True, "is_active": new_status}), 200
+        except ValueError:
+            return jsonify({"error": "User not found"}), 404
+
+    @app.route("/admin/users/<int:user_id>/force-logout", methods=["POST"])
+    @admin_required
+    def admin_force_logout(user_id: int) -> tuple[Response, int] | Response:
+        """Increment user's session version to log them out. Admin cannot force logout themselves."""
+        if user_id == session.get("user_id"):
+            return jsonify({"error": "Admins cannot force logout their own account"}), 400
+
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        try:
+            new_version = increment_user_session_version(user_id, db_path=current_db)
+            record_admin_audit(
+                "force_logout",
+                admin_username=session.get("username"),
+                target_username=user["username"],
+                details=f"Session version incremented to {new_version}",
+                db_path=current_db,
+            )
+            return jsonify({"ok": True, "session_version": new_version}), 200
+        except ValueError:
+            return jsonify({"error": "User not found"}), 404
+
+    @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+    @admin_required
+    def admin_reset_password(user_id: int) -> tuple[Response, int] | Response:
+        """Generate a temporary password, store only the hash, and bump session_version."""
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        temp_password = secrets.token_urlsafe(10)
+        password_hash = generate_password_hash(temp_password)
+        reset_user_password(user_id, password_hash, db_path=current_db)
+
+        record_admin_audit(
+            "password_reset",
+            admin_username=session.get("username"),
+            target_username=user["username"],
+            details="Temporary password generated",
+            db_path=current_db,
+        )
+
+        return jsonify({"ok": True, "temporary_password": temp_password}), 200
+
+    @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+    @admin_required
+    def admin_delete_user(user_id: int) -> tuple[Response, int] | Response:
+        """Delete user and all their sessions, messages, and prompts. Admin cannot delete themselves."""
+        if user_id == session.get("user_id"):
+            return jsonify({"error": "Admins cannot delete their own account"}), 400
+
+        current_db = app.config.get("DB_PATH")
+        user = get_user_by_id(user_id, db_path=current_db)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        target_username = user["username"]
+        delete_user_cascade(user_id, db_path=current_db)
+
+        record_admin_audit(
+            "delete",
+            admin_username=session.get("username"),
+            target_username=target_username,
+            details="User deleted cascade",
+            db_path=current_db,
+        )
+
+        return jsonify({"ok": True}), 200
+
     @app.route("/", methods=["GET"])
     def index() -> str:
         """Render the single-page frontend application."""
-        return render_template("index.html", username=session.get("username", "User"))
+        return render_template(
+            "index.html",
+            username=session.get("username", "User"),
+            role=session.get("role", "user"),
+        )
 
     @app.route("/api/health", methods=["GET"])
     def health_check() -> Response:
@@ -247,8 +725,20 @@ def create_app(
 
         current_db = app.config.get("DB_PATH")
         user_id = session.get("user_id")
-        result = create_session_with_idea(idea.strip(), user_id=user_id, db_path=current_db)
-        return jsonify(result), 201
+
+        limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
+        if limit_err:
+            return limit_err
+
+        try:
+            result = create_session_with_idea(idea.strip(), user_id=user_id, db_path=current_db)
+            if user_id:
+                record_llm_usage(user_id, request.path, success=1, db_path=current_db)
+            return jsonify(result), 201
+        except Exception:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
+            raise
 
     @app.route("/api/sessions/<int:session_id>/messages", methods=["POST"])
     @limiter.limit("20 per minute")
@@ -274,9 +764,20 @@ def create_app(
         if isinstance(text, str) and len(text) > MAX_INPUT_LENGTH:
             return jsonify({"error": f"Input must be {MAX_INPUT_LENGTH} characters or less"}), 400
 
+        limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
+        if limit_err:
+            return limit_err
+
         cleaned_text = text.strip() if isinstance(text, str) else ""
-        result = advance_session(session_id, text=cleaned_text, skip=skip, db_path=current_db)
-        return jsonify(result), 200
+        try:
+            result = advance_session(session_id, text=cleaned_text, skip=skip, db_path=current_db)
+            if user_id:
+                record_llm_usage(user_id, request.path, success=1, db_path=current_db)
+            return jsonify(result), 200
+        except Exception:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
+            raise
 
     @app.route("/api/sessions", methods=["GET"])
     def list_sessions_route() -> Response:
@@ -347,11 +848,23 @@ def create_app(
         if mode not in {"shorter", "detailed"}:
             return jsonify({"error": "Mode must be 'shorter' or 'detailed'"}), 400
 
+        limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
+        if limit_err:
+            return limit_err
+
         try:
             result = refine_prompt(session_id, mode=mode, db_path=current_db)
+            if user_id:
+                record_llm_usage(user_id, request.path, success=1, db_path=current_db)
             return jsonify(result), 200
         except ValueError as ve:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
             return jsonify({"error": str(ve)}), 400
+        except Exception:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
+            raise
 
     @app.route("/api/improve", methods=["POST"])
     @limiter.limit("20 per minute")
@@ -370,11 +883,24 @@ def create_app(
 
         current_db = app.config.get("DB_PATH")
         user_id = session.get("user_id")
+
+        limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
+        if limit_err:
+            return limit_err
+
         try:
             result = improve_prompt(prompt.strip(), user_id=user_id, db_path=current_db)
+            if user_id:
+                record_llm_usage(user_id, request.path, success=1, db_path=current_db)
             return jsonify(result), 200
         except ValueError as ve:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
             return jsonify({"error": str(ve)}), 400
+        except Exception:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
+            raise
 
     @app.route("/api/sessions/<int:session_id>/score", methods=["POST"])
     @limiter.limit("20 per minute")
@@ -386,11 +912,23 @@ def create_app(
         if session_row is None:
             return jsonify({"error": "Session not found"}), 404
 
+        limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
+        if limit_err:
+            return limit_err
+
         try:
             result = score_prompt(session_id, db_path=current_db)
+            if user_id:
+                record_llm_usage(user_id, request.path, success=1, db_path=current_db)
             return jsonify(result), 200
         except ValueError as ve:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
             return jsonify({"error": str(ve)}), 400
+        except Exception:
+            if user_id:
+                record_llm_usage(user_id, request.path, success=0, db_path=current_db)
+            raise
 
     @app.route("/api/sessions/<int:session_id>", methods=["DELETE"])
     def delete_session_route(session_id: int) -> tuple[Response, int]:

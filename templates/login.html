@@ -112,6 +112,25 @@
         .auth-link:hover {
             text-decoration: underline;
         }
+
+        .admin-gate-corner {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+        }
+
+        .admin-gate-link {
+            color: var(--text-muted, #52525b);
+            font-size: 0.75rem;
+            text-decoration: none;
+            opacity: 0.4;
+            transition: opacity 0.2s, color 0.2s;
+        }
+
+        .admin-gate-link:hover {
+            opacity: 0.9;
+            color: var(--text-secondary, #a1a1aa);
+        }
     </style>
 </head>
 <body>
@@ -132,6 +151,7 @@
             {% endif %}
 
             <form class="login-form" method="POST" action="/login">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label class="form-label" for="username">Username</label>
                     <input 
@@ -163,6 +183,9 @@
             <div class="auth-footer">
                 Don't have an account? <a href="/register" class="auth-link">Create one</a>
             </div>
+        </div>
+        <div class="admin-gate-corner">
+            <a href="/admin/gate" class="admin-gate-link">Admin</a>
         </div>
     </div>
 </body>

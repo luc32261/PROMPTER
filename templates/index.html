@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prompt Builder</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -78,6 +79,14 @@
                     </svg>
                     <span class="user-name">{{ username }}</span>
                 </div>
+                {% if role == 'admin' %}
+                <a href="/admin" class="btn btn-admin-link" id="btn-admin-link" title="Admin dashboard">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    <span>Admin</span>
+                </a>
+                {% endif %}
                 <a href="/logout" class="btn btn-logout" id="btn-logout" title="Sign out of Prompt Builder">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
