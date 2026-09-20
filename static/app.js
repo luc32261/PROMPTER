@@ -150,6 +150,30 @@
                 sidebarOverlay.classList.remove("active");
             });
         }
+
+        // Admin link navigation
+        const btnAdminLink = document.getElementById("btn-admin-link");
+        if (btnAdminLink) {
+            btnAdminLink.addEventListener("click", async function (e) {
+                e.preventDefault();
+                // If page rendered when admin was not active, go directly to gate
+                if (btnAdminLink.dataset.adminActive === "false") {
+                    window.location.href = "/admin/gate";
+                    return;
+                }
+                // If it was active, verify with /api/admin/check to handle session expiry
+                try {
+                    const resp = await fetch("/api/admin/check");
+                    if (resp.ok) {
+                        window.location.href = "/admin";
+                    } else {
+                        window.location.href = "/admin/gate";
+                    }
+                } catch (err) {
+                    window.location.href = "/admin/gate";
+                }
+            });
+        }
     }
 
     // Update Mode UI state

@@ -697,10 +697,17 @@ def create_app(
     @app.route("/", methods=["GET"])
     def index() -> str:
         """Render the single-page frontend application."""
+        admin_until = session.get("admin_until", 0)
+        admin_active = (
+            session.get("role") == "admin"
+            and isinstance(admin_until, (int, float))
+            and admin_until > time.time()
+        )
         return render_template(
             "index.html",
             username=session.get("username", "User"),
             role=session.get("role", "user"),
+            admin_active=admin_active,
         )
 
     @app.route("/api/health", methods=["GET"])
