@@ -81,6 +81,18 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def seed_default_user(db_path: str | Path | None = None) -> None:
+    """Ensure an admin/default user exists on startup if configured via environment variables."""
+    username = os.getenv("ADMIN_USERNAME", "").strip()
+    password = os.getenv("ADMIN_PASSWORD", "").strip()
+    if not username or not password:
+        return
+    existing = get_user_by_username(username, db_path=db_path)
+    if not existing:
+        from werkzeug.security import generate_password_hash
+        create_user(username, generate_password_hash(password), db_path=db_path)
+
+
 def init_db(db_path: str | Path | None = None) -> None:
     """Initialize database tables according to the spec schema and apply migrations."""
     try:
@@ -91,6 +103,7 @@ def init_db(db_path: str | Path | None = None) -> None:
             columns = [row["name"] for row in cursor.fetchall()]
             if "user_id" not in columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
+        seed_default_user(db_path)
     except sqlite3.OperationalError:
         pass
 
