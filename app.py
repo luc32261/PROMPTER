@@ -134,9 +134,17 @@ def create_app(
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = is_prod
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
     if test_config:
         app.config.update(test_config)
+
+    @app.after_request
+    def add_static_cache_control(response: Response) -> Response:
+        """Prevent mobile browsers from caching static assets aggressively."""
+        if request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
     @app.context_processor
     def inject_csrf_token() -> dict[str, Any]:
