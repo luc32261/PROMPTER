@@ -102,7 +102,7 @@ body {
     flex-direction: column;
     height: 100%;
     z-index: 30;
-    transition: transform 0.25s ease;
+    transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-header {
@@ -112,27 +112,82 @@ body {
     gap: 14px;
 }
 
+.sidebar-brand-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.btn-minimize-sidebar {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-minimize-sidebar:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+    border-color: var(--border-color);
+}
+
+/* Sidebar Actions - Stacked vertically one by one */
 .sidebar-actions {
     display: flex;
+    flex-direction: column;
     gap: 8px;
+    width: 100%;
+}
+
+.sidebar-actions .btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    border-radius: var(--radius-md);
+    box-sizing: border-box;
+    white-space: nowrap;
+    text-align: left;
+    transition: var(--transition);
+}
+
+.sidebar-actions .btn svg {
+    flex-shrink: 0;
 }
 
 .btn-new {
-    flex: 1;
+    background-color: var(--accent-primary);
+    color: #ffffff;
+    border: 1px solid var(--accent-primary);
+}
+
+.btn-new:hover {
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 .btn-mode {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 10px 12px;
-    font-size: 0.82rem;
-    white-space: nowrap;
 }
 
 .btn-mode:hover {
     background-color: var(--bg-surface-hover);
     color: var(--text-primary);
+    border-color: var(--border-highlight);
 }
 
 .btn-mode.active {
@@ -145,9 +200,6 @@ body {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 10px 12px;
-    font-size: 0.82rem;
-    white-space: nowrap;
 }
 
 .btn-templates:hover {
@@ -160,6 +212,88 @@ body {
     background-color: var(--accent-subtle);
     border-color: var(--accent-primary);
     color: var(--accent-primary);
+}
+
+/* Desktop Top Bar & Minimize / Restore Window */
+.desktop-topbar {
+    height: 48px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background-color: var(--bg-base);
+    border-bottom: 1px solid transparent;
+    z-index: 15;
+}
+
+.desktop-topbar-left,
+.desktop-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-restore-sidebar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-restore-sidebar:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-highlight);
+}
+
+.topbar-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.topbar-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+    border-color: var(--border-highlight);
+}
+
+/* Sidebar Minimized on Desktop */
+@media (min-width: 769px) {
+    .app-layout.sidebar-minimized .sidebar {
+        margin-left: -300px;
+    }
+
+    .app-layout.sidebar-minimized .btn-restore-sidebar {
+        display: flex;
+    }
+
+    .app-layout.sidebar-minimized .desktop-topbar {
+        border-bottom-color: var(--border-color);
+    }
+}
+
+@media (max-width: 768px) {
+    .desktop-topbar {
+        display: none !important;
+    }
 }
 
 .mobile-mode-wrap {

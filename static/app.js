@@ -69,12 +69,23 @@
     const btnToggleSidebar = document.getElementById("btn-toggle-sidebar");
     const sidebar = document.getElementById("sidebar");
     const sidebarOverlay = document.getElementById("sidebar-overlay");
+    const appLayout = document.querySelector(".app-layout");
+    const btnMinimizeSidebar = document.getElementById("btn-minimize-sidebar");
+    const btnRestoreSidebar = document.getElementById("btn-restore-sidebar");
+    const btnToggleFullscreen = document.getElementById("btn-toggle-fullscreen");
+    const iconFsEnter = document.getElementById("icon-fs-enter");
+    const iconFsExit = document.getElementById("icon-fs-exit");
 
     // Initialize
     function init() {
         bindEvents();
         loadHistory();
         resetToEmptyState();
+        try {
+            if (localStorage.getItem("sidebar_minimized") === "true" && window.innerWidth > 768) {
+                toggleSidebarMinimize(true);
+            }
+        } catch (e) {}
     }
 
     // Bind UI Event Listeners
@@ -204,6 +215,11 @@
             if (e.key === "Escape" && templatesModal && templatesModal.classList.contains("active")) {
                 closeTemplatesModal();
             }
+            // Ctrl+B / Cmd+B to toggle / minimize sidebar window
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+                e.preventDefault();
+                toggleSidebarMinimize();
+            }
         });
 
         inputText.addEventListener("keydown", function (e) {
@@ -287,6 +303,57 @@
                 }
             });
         }
+
+        // Minimize and restore sidebar window
+        if (btnMinimizeSidebar) {
+            btnMinimizeSidebar.addEventListener("click", function () {
+                if (window.innerWidth <= 768) {
+                    if (sidebar) sidebar.classList.remove("open");
+                    if (sidebarOverlay) sidebarOverlay.classList.remove("active");
+                } else {
+                    toggleSidebarMinimize(true);
+                }
+            });
+        }
+
+        if (btnRestoreSidebar) {
+            btnRestoreSidebar.addEventListener("click", function () {
+                toggleSidebarMinimize(false);
+            });
+        }
+
+        if (btnToggleFullscreen) {
+            btnToggleFullscreen.addEventListener("click", function () {
+                if (!document.fullscreenElement) {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(function () {});
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen().catch(function () {});
+                    }
+                }
+            });
+
+            document.addEventListener("fullscreenchange", function () {
+                const isFs = !!document.fullscreenElement;
+                if (iconFsEnter) iconFsEnter.style.display = isFs ? "none" : "block";
+                if (iconFsExit) iconFsExit.style.display = isFs ? "block" : "none";
+            });
+        }
+    }
+
+    // Toggle Minimize Sidebar Window
+    function toggleSidebarMinimize(forceState) {
+        if (!appLayout) return;
+        const isMin = typeof forceState === "boolean"
+            ? forceState
+            : !appLayout.classList.contains("sidebar-minimized");
+
+        appLayout.classList.toggle("sidebar-minimized", isMin);
+        try {
+            localStorage.setItem("sidebar_minimized", isMin ? "true" : "false");
+        } catch (e) {}
     }
 
     // Update Mode UI state
