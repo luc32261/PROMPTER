@@ -48,6 +48,17 @@
 
         .login-header .logo {
             font-size: 1.4rem;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+            cursor: default;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .login-header .logo.press-pulse {
+            transform: scale(0.96);
+            opacity: 0.85;
         }
 
         .login-subtitle {
@@ -121,32 +132,13 @@
         .auth-link:hover {
             text-decoration: underline;
         }
-
-        .admin-gate-corner {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-        }
-
-        .admin-gate-link {
-            color: var(--text-muted, #52525b);
-            font-size: 0.75rem;
-            text-decoration: none;
-            opacity: 0.4;
-            transition: opacity 0.2s, color 0.2s;
-        }
-
-        .admin-gate-link:hover {
-            opacity: 0.9;
-            color: var(--text-secondary, #a1a1aa);
-        }
     </style>
 </head>
 <body>
     <div class="login-page">
         <div class="login-card">
             <div class="login-header">
-                <div class="logo">
+                <div class="logo" id="app-logo">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                     </svg>
@@ -193,9 +185,120 @@
                 Don't have an account? <a href="/register" class="auth-link">Create one</a>
             </div>
         </div>
-        <div class="admin-gate-corner">
-            <a href="/admin/gate" class="admin-gate-link">Admin</a>
-        </div>
     </div>
+
+    <script>
+    (function () {
+        "use strict";
+
+        const GATE_URL = "/admin/gate";
+
+        // --- 1. Desktop shortcut: 'g' then 'a' in sequence within 1s when no input field has focus ---
+        let lastGTime = 0;
+
+        document.addEventListener("keydown", function (e) {
+            // Escape key blurs any active input for convenient keyboard shortcut use
+            if (e.key === "Escape" && document.activeElement && typeof document.activeElement.blur === "function") {
+                document.activeElement.blur();
+                lastGTime = 0;
+                return;
+            }
+
+            // Check if any form input, textarea, select, or contenteditable element has focus
+            const active = document.activeElement;
+            const isInputFocused = active && (
+                active.tagName === "INPUT" ||
+                active.tagName === "TEXTAREA" ||
+                active.tagName === "SELECT" ||
+                active.isContentEditable
+            );
+
+            // Check event target as well
+            const target = e.target;
+            const isTargetInput = target && (
+                target.tagName === "INPUT" ||
+                target.tagName === "TEXTAREA" ||
+                target.tagName === "SELECT" ||
+                target.isContentEditable
+            );
+
+            // Typing anywhere into form fields must NEVER trigger the shortcut
+            if (isInputFocused || isTargetInput) {
+                lastGTime = 0;
+                return;
+            }
+
+            // Ignore modifier keys
+            if (e.ctrlKey || e.altKey || e.metaKey) {
+                return;
+            }
+
+            const key = (e.key || "").toLowerCase();
+            const now = Date.now();
+
+            if (key === "g") {
+                lastGTime = now;
+            } else if (key === "a") {
+                if (lastGTime > 0 && (now - lastGTime) <= 1000) {
+                    lastGTime = 0;
+                    window.location.href = GATE_URL;
+                } else {
+                    lastGTime = 0;
+                }
+            } else {
+                lastGTime = 0;
+            }
+        });
+
+        // --- 2. Mobile long-press: 5 seconds on app logo/icon with subtle visual pulse & haptic feedback ---
+        const logo = document.getElementById("app-logo");
+        if (logo) {
+            let pressTimer = null;
+            let isPressing = false;
+
+            function startLongPress(e) {
+                // Ignore secondary mouse clicks
+                if (e.button !== undefined && e.button !== 0) return;
+
+                isPressing = true;
+                logo.classList.add("press-pulse");
+
+                // Subtle haptic feedback if supported (25ms micro-vibration)
+                if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+                    try {
+                        navigator.vibrate(25);
+                    } catch (_) {}
+                }
+
+                clearTimeout(pressTimer);
+                pressTimer = setTimeout(function () {
+                    if (isPressing) {
+                        logo.classList.remove("press-pulse");
+                        window.location.href = GATE_URL;
+                    }
+                }, 5000);
+            }
+
+            function cancelLongPress() {
+                if (!isPressing) return;
+                isPressing = false;
+                clearTimeout(pressTimer);
+                pressTimer = null;
+                logo.classList.remove("press-pulse");
+            }
+
+            // Pointer events (modern touch & mouse)
+            logo.addEventListener("pointerdown", startLongPress);
+            logo.addEventListener("pointerup", cancelLongPress);
+            logo.addEventListener("pointercancel", cancelLongPress);
+            logo.addEventListener("pointerleave", cancelLongPress);
+
+            // Prevent mobile long-press context menu on logo
+            logo.addEventListener("contextmenu", function (e) {
+                e.preventDefault();
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

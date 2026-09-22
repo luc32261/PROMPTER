@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -1501,6 +1502,226 @@ def test_audit_table_rendered_on_admin_page(auth_app, monkeypatch) -> None:
     assert b"Admin Audit Log" in resp.data
     assert b"gate_success" in resp.data
     assert b"admin_login_success" in resp.data
+
+
+def test_login_page_no_visible_admin_links(unauthenticated_client: FlaskClient) -> None:
+    """Verify that GET /login has no visible admin link, button, corner element, or hint text."""
+    resp = unauthenticated_client.get("/login")
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'href="/admin/gate"' not in html
+    assert "admin-gate-link" not in html
+    assert "admin-gate-corner" not in html
+    assert ">Admin</a>" not in html
+    assert ">Admin</button>" not in html
+
+
+def test_hidden_admin_entry_client_script() -> None:
+    """Verify hidden admin entry client logic:
+    1. Desktop shortcut: 'g' then 'a' in sequence within 1s navigates to /admin/gate.
+    2. Typing in login form (username/password) never triggers navigation.
+    3. Mobile long-press navigates after 5 seconds.
+    4. Press under 5 seconds does nothing.
+    """
+    login_html_path = Path(__file__).resolve().parent.parent / "templates" / "login.html"
+    assert login_html_path.exists(), "login.html must exist"
+    content = login_html_path.read_text(encoding="utf-8")
+
+    # Extract script tag content
+    script_start = content.find("<script>")
+    script_end = content.rfind("</script>")
+    assert script_start != -1 and script_end != -1, "login.html must contain <script> tag"
+    script_code = content[script_start + len("<script>"):script_end].strip()
+
+    encoded_code = json.dumps(script_code)
+
+    node_runner = f"""
+    const assert = require('assert');
+
+    function createMockEnvironment() {{
+        const docListeners = {{}};
+        const logoListeners = {{}};
+        const logoClasses = new Set();
+        let activeElement = null;
+        const windowLocation = {{ href: "" }};
+        let vibrateCount = 0;
+
+        const mockLogo = {{
+            id: "app-logo",
+            classList: {{
+                add: (c) => logoClasses.add(c),
+                remove: (c) => logoClasses.delete(c),
+                contains: (c) => logoClasses.has(c)
+            }},
+            addEventListener: (ev, fn) => {{
+                logoListeners[ev] = logoListeners[ev] || [];
+                logoListeners[ev].push(fn);
+            }},
+            dispatchEvent: (ev, evtObj) => {{
+                if (logoListeners[ev]) {{
+                    logoListeners[ev].forEach(fn => fn(evtObj || {{}}));
+                }}
+            }}
+        }};
+
+        const mockDoc = {{
+            get activeElement() {{
+                return activeElement;
+            }},
+            set activeElement(el) {{
+                activeElement = el;
+            }},
+            getElementById: (id) => (id === "app-logo" ? mockLogo : null),
+            querySelector: (sel) => (sel === ".login-header .logo" ? mockLogo : null),
+            addEventListener: (ev, fn) => {{
+                docListeners[ev] = docListeners[ev] || [];
+                docListeners[ev].push(fn);
+            }},
+            dispatchEvent: (ev, evtObj) => {{
+                if (docListeners[ev]) {{
+                    docListeners[ev].forEach(fn => fn(evtObj || {{}}));
+                }}
+            }}
+        }};
+
+        const mockNav = {{
+            vibrate: (ms) => {{ vibrateCount++; }}
+        }};
+
+        // Execute the extracted script
+        const scriptSource = {encoded_code};
+        const runScript = new Function("document", "window", "navigator", scriptSource);
+        runScript(mockDoc, {{ location: windowLocation }}, mockNav);
+
+        return {{
+            mockDoc,
+            mockLogo,
+            logoClasses,
+            windowLocation,
+            setActiveElement: (el) => {{ activeElement = el; }},
+            dispatchKey: (key, target, opts) => {{
+                mockDoc.dispatchEvent("keydown", {{
+                    key,
+                    target: target || activeElement || null,
+                    ctrlKey: (opts && opts.ctrlKey) || false,
+                    altKey: (opts && opts.altKey) || false,
+                    metaKey: (opts && opts.metaKey) || false,
+                    preventDefault: () => {{}}
+                }});
+            }},
+            dispatchLogoPointerDown: (btn) => {{
+                mockLogo.dispatchEvent("pointerdown", {{
+                    button: btn !== undefined ? btn : 0,
+                    preventDefault: () => {{}}
+                }});
+            }},
+            dispatchLogoPointerUp: () => {{
+                mockLogo.dispatchEvent("pointerup", {{ preventDefault: () => {{}} }});
+            }}
+        }};
+    }}
+
+    // 1. Desktop shortcut: 'g' then 'a' within 1s when no input focused -> navigates
+    (function testDesktopShortcut() {{
+        const env = createMockEnvironment();
+        env.setActiveElement(null);
+        env.dispatchKey("g");
+        env.dispatchKey("a");
+        assert.strictEqual(env.windowLocation.href, "/admin/gate", "Desktop shortcut 'g' then 'a' must navigate to /admin/gate");
+    }})();
+
+    // 2. Normal typing in login form (username/password focused) -> never navigates
+    (function testTypingInInputDoesNotTrigger() {{
+        const env = createMockEnvironment();
+        const inputElem = {{ tagName: "INPUT", isContentEditable: false }};
+        env.setActiveElement(inputElem);
+        env.dispatchKey("g", inputElem);
+        env.dispatchKey("a", inputElem);
+        assert.strictEqual(env.windowLocation.href, "", "Typing 'g' and 'a' while input is focused must NOT navigate");
+
+        const textareaElem = {{ tagName: "TEXTAREA", isContentEditable: false }};
+        env.setActiveElement(textareaElem);
+        env.dispatchKey("g", textareaElem);
+        env.dispatchKey("a", textareaElem);
+        assert.strictEqual(env.windowLocation.href, "", "Typing in textarea must NOT navigate");
+    }})();
+
+    // 3. Desktop sequence with >1s gap -> does not navigate
+    (function testDesktopSlowSequence() {{
+        const realDateNow = Date.now;
+        let simTime = 1000;
+        Date.now = () => simTime;
+        try {{
+            const env = createMockEnvironment();
+            env.setActiveElement(null);
+            env.dispatchKey("g");
+            simTime += 1200; // 1.2s later
+            env.dispatchKey("a");
+            assert.strictEqual(env.windowLocation.href, "", "Pressing 'g' then 'a' after >1s must NOT navigate");
+        }} finally {{
+            Date.now = realDateNow;
+        }}
+    }})();
+
+    // 4. Mobile long-press navigates after 5 seconds
+    (function testMobileLongPress5Seconds() {{
+        let timerCallback = null;
+        let timerMs = 0;
+        const origSetTimeout = setTimeout;
+        const origClearTimeout = clearTimeout;
+        try {{
+            global.setTimeout = (fn, ms) => {{ timerCallback = fn; timerMs = ms; return 123; }};
+            global.clearTimeout = (id) => {{ timerCallback = null; }};
+
+            const env = createMockEnvironment();
+            env.dispatchLogoPointerDown(0);
+            assert.strictEqual(timerMs, 5000, "Long press timer must be 5000ms");
+            assert.strictEqual(env.logoClasses.has("press-pulse"), true, "Must show subtle visual pulse on start");
+            assert.strictEqual(env.windowLocation.href, "", "Must not navigate immediately");
+
+            // Advance 5 seconds
+            assert.ok(timerCallback, "Timer callback must be registered");
+            timerCallback();
+            assert.strictEqual(env.windowLocation.href, "/admin/gate", "Must navigate to /admin/gate after 5s");
+            assert.strictEqual(env.logoClasses.has("press-pulse"), false, "Must remove pulse class after navigation");
+        }} finally {{
+            global.setTimeout = origSetTimeout;
+            global.clearTimeout = origClearTimeout;
+        }}
+    }})();
+
+    // 5. Mobile press under 5 seconds cancels and does nothing
+    (function testMobilePressUnder5Seconds() {{
+        let timerCallback = null;
+        const origSetTimeout = setTimeout;
+        const origClearTimeout = clearTimeout;
+        try {{
+            global.setTimeout = (fn, ms) => {{ timerCallback = fn; return 456; }};
+            global.clearTimeout = (id) => {{ timerCallback = null; }};
+
+            const env = createMockEnvironment();
+            env.dispatchLogoPointerDown(0);
+            assert.strictEqual(env.logoClasses.has("press-pulse"), true);
+            assert.ok(timerCallback !== null);
+
+            // Released under 5 seconds (e.g. pointerup)
+            env.dispatchLogoPointerUp();
+            assert.strictEqual(timerCallback, null, "Timer must be cancelled when released early");
+            assert.strictEqual(env.logoClasses.has("press-pulse"), false, "Pulse class must be removed when released");
+            assert.strictEqual(env.windowLocation.href, "", "Must NOT navigate if released under 5 seconds");
+        }} finally {{
+            global.setTimeout = origSetTimeout;
+            global.clearTimeout = origClearTimeout;
+        }}
+    }})();
+
+    console.log("HIDDEN_ADMIN_ENTRY_TESTS_PASSED");
+    """
+
+    res = subprocess.run(["node", "-e", node_runner], capture_output=True, text=True)
+    assert res.returncode == 0, f"Node tests failed: {res.stderr}\n{res.stdout}"
+    assert "HIDDEN_ADMIN_ENTRY_TESTS_PASSED" in res.stdout
+
 
 
 
