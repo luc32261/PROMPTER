@@ -14,6 +14,7 @@ from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import (
+    clear_admin_audit,
     clear_failed_attempts,
     create_user,
     delete_session,
@@ -559,7 +560,7 @@ def create_app(
         users = list_users_with_stats(db_path=current_db)
         total_calls_today = get_total_usage_today(db_path=current_db)
         default_limit = int(os.getenv("DAILY_LIMIT", 100))
-        audit_logs = get_recent_admin_audit(limit=50, db_path=current_db)
+        audit_logs = get_recent_admin_audit(limit=100, db_path=current_db)
         return render_template(
             "admin.html",
             users=users,
@@ -701,6 +702,14 @@ def create_app(
             db_path=current_db,
         )
 
+        return jsonify({"ok": True}), 200
+
+    @app.route("/admin/audit/clear", methods=["POST"])
+    @admin_required
+    def admin_clear_audit_route() -> tuple[Response, int] | Response:
+        """Clear all entries from the admin audit log."""
+        current_db = app.config.get("DB_PATH")
+        clear_admin_audit(db_path=current_db)
         return jsonify({"ok": True}), 200
 
     @app.route("/", methods=["GET"])

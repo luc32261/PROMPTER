@@ -681,3 +681,10 @@ def get_recent_admin_audit(
         )
         return cursor.fetchall()
 
+
+def clear_admin_audit(db_path: str | Path | None = None) -> None:
+    """Delete all records from the admin_audit table."""
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM admin_audit;")
+
+

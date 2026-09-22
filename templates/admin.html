@@ -777,6 +777,104 @@
                 padding: 18px 14px;
             }
         }
+
+        /* --- Audit Log Pagination Styles --- */
+        .audit-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 14px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-top: none;
+            border-radius: 0 0 var(--radius-md) var(--radius-md);
+            flex-wrap: wrap;
+            gap: 12px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .pagination-info {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-page-nav {
+            padding: 6px 14px;
+            font-size: 0.82rem;
+            min-height: 32px;
+            background-color: var(--bg-base);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .btn-page-nav:hover:not(:disabled) {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+
+        .btn-page-nav:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .pagination-page-numbers {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .page-num-btn {
+            min-width: 32px;
+            height: 32px;
+            padding: 0 8px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-base);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .page-num-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+
+        .page-num-btn.active {
+            background-color: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        @media (max-width: 640px) {
+            .audit-pagination {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 12px;
+            }
+            .pagination-controls {
+                justify-content: center;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -949,7 +1047,7 @@
                 <div class="admin-card-header">
                     <div class="admin-card-title">Admin Audit Log</div>
                     <div class="summary-chips">
-                        <div class="user-count-badge">Last {{ audit_logs|length }} events</div>
+                        <div class="user-count-badge" id="audit-count-badge">{{ audit_logs|length }} total events</div>
                     </div>
                 </div>
 
@@ -964,7 +1062,7 @@
                                 <th>Details</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="audit-table-body">
                             {% if audit_logs %}
                                 {% for log in audit_logs %}
                                 <tr class="admin-audit-row">
@@ -995,6 +1093,24 @@
                             {% endif %}
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Audit Pagination Bar -->
+                <div class="audit-pagination" id="audit-pagination" {% if not audit_logs %}style="display: none;"{% endif %}>
+                    <div class="pagination-info" id="audit-pagination-info">
+                        Showing 1–10 of {{ audit_logs|length }} events
+                    </div>
+                    <div class="pagination-controls">
+                        <button type="button" class="btn-page-nav" id="audit-btn-prev" onclick="changeAuditPage(-1)" disabled>
+                            &larr; Prev
+                        </button>
+                        <div class="pagination-page-numbers" id="audit-page-numbers">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                        <button type="button" class="btn-page-nav" id="audit-btn-next" onclick="changeAuditPage(1)">
+                            Next &rarr;
+                        </button>
+                    </div>
                 </div>
             </div>
         </main>
@@ -1036,6 +1152,7 @@
             </div>
         </div>
     </div>
+
 
     <script>
         // Wrap window.fetch to automatically include CSRF token for mutating requests
@@ -1185,6 +1302,88 @@
                 alert('Network error while deleting user');
             }
         }
+
+        // --- Audit Log Client-Side Pagination ---
+        const AUDIT_PAGE_SIZE = 10;
+        let currentAuditPage = 1;
+
+        function renderAuditPagination() {
+            const rows = document.querySelectorAll('.admin-audit-row');
+            const totalRows = rows.length;
+            const paginationEl = document.getElementById('audit-pagination');
+            const infoEl = document.getElementById('audit-pagination-info');
+            const prevBtn = document.getElementById('audit-btn-prev');
+            const nextBtn = document.getElementById('audit-btn-next');
+            const pageNumbersEl = document.getElementById('audit-page-numbers');
+
+            if (!paginationEl) return;
+
+            if (totalRows === 0) {
+                paginationEl.style.display = 'none';
+                return;
+            }
+
+            paginationEl.style.display = 'flex';
+            const totalPages = Math.max(1, Math.ceil(totalRows / AUDIT_PAGE_SIZE));
+
+            if (currentAuditPage > totalPages) currentAuditPage = totalPages;
+            if (currentAuditPage < 1) currentAuditPage = 1;
+
+            const startIndex = (currentAuditPage - 1) * AUDIT_PAGE_SIZE;
+            const endIndex = Math.min(startIndex + AUDIT_PAGE_SIZE, totalRows);
+
+            rows.forEach((row, idx) => {
+                if (idx >= startIndex && idx < endIndex) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            if (infoEl) {
+                infoEl.textContent = `Showing ${startIndex + 1}–${endIndex} of ${totalRows} events`;
+            }
+
+            if (prevBtn) {
+                prevBtn.disabled = (currentAuditPage <= 1);
+            }
+            if (nextBtn) {
+                nextBtn.disabled = (currentAuditPage >= totalPages);
+            }
+
+            if (pageNumbersEl) {
+                pageNumbersEl.innerHTML = '';
+                for (let p = 1; p <= totalPages; p++) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = `page-num-btn${p === currentAuditPage ? ' active' : ''}`;
+                    btn.textContent = p;
+                    btn.setAttribute('aria-label', `Page ${p}`);
+                    btn.onclick = () => goToAuditPage(p);
+                    pageNumbersEl.appendChild(btn);
+                }
+            }
+        }
+
+        function changeAuditPage(delta) {
+            const rows = document.querySelectorAll('.admin-audit-row');
+            const totalPages = Math.max(1, Math.ceil(rows.length / AUDIT_PAGE_SIZE));
+            const newPage = currentAuditPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentAuditPage = newPage;
+                renderAuditPagination();
+            }
+        }
+
+        function goToAuditPage(pageNum) {
+            currentAuditPage = pageNum;
+            renderAuditPagination();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderAuditPagination();
+        });
+        renderAuditPagination();
 
         // Format UTC timestamps into browser local time
         function formatLocalDateTime(utcStr) {

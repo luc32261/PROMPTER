@@ -12,6 +12,7 @@ from werkzeug.security import generate_password_hash
 from app import create_app
 from db import (
     add_message,
+    clear_admin_audit,
     create_session,
     create_user,
     get_connection,
@@ -1721,6 +1722,98 @@ def test_hidden_admin_entry_client_script() -> None:
     res = subprocess.run(["node", "-e", node_runner], capture_output=True, text=True)
     assert res.returncode == 0, f"Node tests failed: {res.stderr}\n{res.stdout}"
     assert "HIDDEN_ADMIN_ENTRY_TESTS_PASSED" in res.stdout
+
+
+def test_clear_admin_audit_db(auth_app) -> None:
+    """Verify clear_admin_audit wipes all entries from the admin_audit table."""
+    db_path = auth_app.config["DB_PATH"]
+    record_admin_audit("gate_success", admin_username="admin1", details="test entry 1", db_path=db_path)
+    record_admin_audit("disable", admin_username="admin1", target_username="user1", db_path=db_path)
+    assert len(get_recent_admin_audit(50, db_path=db_path)) >= 2
+
+    clear_admin_audit(db_path=db_path)
+    assert len(get_recent_admin_audit(50, db_path=db_path)) == 0
+
+
+def test_clear_admin_audit_route(auth_app, monkeypatch) -> None:
+    """Verify POST /admin/audit/clear requires admin credentials and empties the log."""
+    db_path = auth_app.config["DB_PATH"]
+    monkeypatch.setenv("ADMIN_USERNAME", "super_admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin_pass123")
+    monkeypatch.setenv("ADMIN_GATE_PASSWORD", "gate_secret_123")
+    sync_admin(db_path)
+
+    create_user("regular_user", generate_password_hash("password123"), db_path=db_path)
+
+    # 1. Unauthenticated guest -> 404
+    guest_client = auth_app.test_client()
+    resp_guest = guest_client.post("/admin/audit/clear")
+    assert resp_guest.status_code == 404
+
+    # 2. Non-admin user -> 404
+    user_client = auth_app.test_client()
+    user_client.post("/login", json={"username": "regular_user", "password": "password123"})
+    resp_user = user_client.post("/admin/audit/clear")
+    assert resp_user.status_code == 404
+
+    # 3. Normal login by admin (without gate) -> 404
+    normal_admin = auth_app.test_client()
+    normal_admin.post("/login", json={"username": "super_admin", "password": "admin_pass123"})
+    resp_no_gate = normal_admin.post("/admin/audit/clear")
+    assert resp_no_gate.status_code == 404
+
+    # 4. Authenticated admin with gate -> 200 and audit table is cleared
+    admin_client = auth_app.test_client()
+    login_as_admin(admin_client, "super_admin", "admin_pass123", "gate_secret_123")
+    assert len(get_recent_admin_audit(50, db_path=db_path)) > 0
+
+    # Send clear request
+    resp_clear = admin_client.post("/admin/audit/clear")
+    assert resp_clear.status_code == 200
+    assert resp_clear.get_json() == {"ok": True}
+
+    # Verify database table is completely cleared
+    assert len(get_recent_admin_audit(50, db_path=db_path)) == 0
+
+    # Verify /admin shows empty state message and Clear Audit Log button is removed
+    resp_admin = admin_client.get("/admin")
+    assert resp_admin.status_code == 200
+    assert b"No audit events recorded yet." in resp_admin.data
+    assert b"Clear Audit Log" not in resp_admin.data
+
+
+def test_admin_audit_table_pagination(auth_app, monkeypatch) -> None:
+    """Verify /admin renders pagination elements for the audit table and no clear button."""
+    db_path = auth_app.config["DB_PATH"]
+    monkeypatch.setenv("ADMIN_USERNAME", "super_admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin_pass123")
+    monkeypatch.setenv("ADMIN_GATE_PASSWORD", "gate_secret_123")
+    sync_admin(db_path)
+
+    # Insert 15 audit events
+    for i in range(15):
+        record_admin_audit("limit_change", admin_username="super_admin", target_username=f"user_{i}", details=f"Limit set to {i}", db_path=db_path)
+
+    admin_client = auth_app.test_client()
+    login_as_admin(admin_client, "super_admin", "admin_pass123", "gate_secret_123")
+
+    resp = admin_client.get("/admin")
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+
+    # Pagination controls present
+    assert 'id="audit-pagination"' in html
+    assert 'id="audit-btn-prev"' in html
+    assert 'id="audit-btn-next"' in html
+    assert 'id="audit-page-numbers"' in html
+    assert 'AUDIT_PAGE_SIZE = 10' in html
+    assert 'renderAuditPagination()' in html
+
+    # Clear button completely removed
+    assert "btn-clear-audit" not in html
+    assert "Clear Audit Log" not in html
+    assert "clear-audit-modal" not in html
+
 
 
 
