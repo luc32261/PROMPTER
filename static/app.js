@@ -32,7 +32,10 @@
     let currentSessionStatus = null;
     let isLoading = false;
     let allSessions = [];
+    let allTemplates = [];
     let activeFilter = "all";
+    let activeTemplateCategory = "all";
+    let currentPreviewTemplate = null;
     let searchQuery = "";
     let isImproveMode = false;
 
@@ -46,6 +49,20 @@
     const btnSend = document.getElementById("btn-send");
     const btnNewPrompt = document.getElementById("btn-new-prompt");
     const btnToggleMode = document.getElementById("btn-toggle-mode");
+    const btnTemplates = document.getElementById("btn-templates");
+    const mobileModeSelect = document.getElementById("mobile-mode-select");
+    const mobileSegmentedControl = document.getElementById("mobile-segmented-control");
+    const templatesModal = document.getElementById("templates-modal");
+    const btnCloseTemplates = document.getElementById("btn-close-templates");
+    const templatesListPane = document.getElementById("templates-list-pane");
+    const templatePreviewPane = document.getElementById("template-preview-pane");
+    const btnBackToList = document.getElementById("btn-back-to-list");
+    const btnCopyTemplate = document.getElementById("btn-copy-template");
+    const btnUseTemplate = document.getElementById("btn-use-template");
+    const previewTemplateTitle = document.getElementById("preview-template-title");
+    const previewTemplateBadge = document.getElementById("preview-template-badge");
+    const previewTemplateBlurb = document.getElementById("preview-template-blurb");
+    const previewTemplateContent = document.getElementById("preview-template-content");
     const skipContainer = document.getElementById("skip-container");
     const btnSkip = document.getElementById("btn-skip");
     const loadingIndicator = document.getElementById("loading-indicator");
@@ -63,18 +80,110 @@
     // Bind UI Event Listeners
     function bindEvents() {
         btnNewPrompt.addEventListener("click", function () {
+            closeTemplatesModal();
             isImproveMode = false;
-            updateModeUI();
+            updateModeUI("new");
             resetToEmptyState();
         });
 
         if (btnToggleMode) {
             btnToggleMode.addEventListener("click", function () {
+                closeTemplatesModal();
                 isImproveMode = !isImproveMode;
-                updateModeUI();
+                updateModeUI(isImproveMode ? "improve" : "new");
                 resetToEmptyState();
             });
         }
+
+        if (btnTemplates) {
+            btnTemplates.addEventListener("click", function () {
+                openTemplatesModal();
+            });
+        }
+
+        if (mobileModeSelect) {
+            mobileModeSelect.addEventListener("change", function () {
+                const mode = mobileModeSelect.value;
+                if (mode === "templates") {
+                    openTemplatesModal();
+                } else if (mode === "improve") {
+                    closeTemplatesModal();
+                    isImproveMode = true;
+                    updateModeUI("improve");
+                    resetToEmptyState();
+                } else {
+                    closeTemplatesModal();
+                    isImproveMode = false;
+                    updateModeUI("new");
+                    resetToEmptyState();
+                }
+            });
+        }
+
+        if (mobileSegmentedControl) {
+            mobileSegmentedControl.querySelectorAll(".segment-btn").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                    const mode = btn.getAttribute("data-mode");
+                    if (mode === "templates") {
+                        openTemplatesModal();
+                    } else if (mode === "improve") {
+                        closeTemplatesModal();
+                        isImproveMode = true;
+                        updateModeUI("improve");
+                        resetToEmptyState();
+                    } else {
+                        closeTemplatesModal();
+                        isImproveMode = false;
+                        updateModeUI("new");
+                        resetToEmptyState();
+                    }
+                });
+            });
+        }
+
+        if (btnCloseTemplates) {
+            btnCloseTemplates.addEventListener("click", closeTemplatesModal);
+        }
+
+        if (templatesModal) {
+            templatesModal.addEventListener("click", function (e) {
+                if (e.target === templatesModal) {
+                    closeTemplatesModal();
+                }
+            });
+        }
+
+        if (btnBackToList) {
+            btnBackToList.addEventListener("click", function () {
+                if (templatePreviewPane) templatePreviewPane.style.display = "none";
+                if (templatesListPane) templatesListPane.style.display = "flex";
+                currentPreviewTemplate = null;
+            });
+        }
+
+        if (btnCopyTemplate) {
+            btnCopyTemplate.addEventListener("click", function () {
+                if (currentPreviewTemplate) {
+                    copyToClipboard(currentPreviewTemplate.content, btnCopyTemplate);
+                }
+            });
+        }
+
+        if (btnUseTemplate) {
+            btnUseTemplate.addEventListener("click", useTemplateAsStartingPoint);
+        }
+
+        // Templates category chips
+        document.querySelectorAll(".tpl-chip").forEach(function (chip) {
+            chip.addEventListener("click", function () {
+                document.querySelectorAll(".tpl-chip").forEach(function (c) {
+                    c.classList.remove("active");
+                });
+                chip.classList.add("active");
+                activeTemplateCategory = chip.getAttribute("data-category") || "all";
+                renderTemplatesList();
+            });
+        });
 
         btnSend.addEventListener("click", handleSend);
 
@@ -90,6 +199,10 @@
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 handleSend();
+            }
+            // Escape to close templates modal
+            if (e.key === "Escape" && templatesModal && templatesModal.classList.contains("active")) {
+                closeTemplatesModal();
             }
         });
 
@@ -177,10 +290,27 @@
     }
 
     // Update Mode UI state
-    function updateModeUI() {
-        if (!btnToggleMode) return;
-        btnToggleMode.classList.toggle("active", isImproveMode);
-        btnToggleMode.setAttribute("aria-pressed", isImproveMode ? "true" : "false");
+    function updateModeUI(mode) {
+        if (mode === "improve") {
+            isImproveMode = true;
+        } else if (mode === "new") {
+            isImproveMode = false;
+        }
+
+        if (btnToggleMode) {
+            btnToggleMode.classList.toggle("active", isImproveMode);
+            btnToggleMode.setAttribute("aria-pressed", isImproveMode ? "true" : "false");
+        }
+
+        if (mobileModeSelect) {
+            mobileModeSelect.value = isImproveMode ? "improve" : "new";
+        }
+
+        if (mobileSegmentedControl) {
+            mobileSegmentedControl.querySelectorAll(".segment-btn").forEach(function (btn) {
+                btn.classList.toggle("active", btn.getAttribute("data-mode") === (isImproveMode ? "improve" : "new"));
+            });
+        }
 
         const emptyTitle = emptyState.querySelector("h2");
         const emptyDesc = emptyState.querySelector("p");
@@ -193,6 +323,192 @@
             if (emptyTitle) emptyTitle.textContent = "What do you want a prompt for?";
             if (emptyDesc) emptyDesc.textContent = "Enter a rough idea below. The assistant will ask a few quick questions to craft an optimal, model-agnostic prompt.";
             inputText.placeholder = "Type your idea or answer... (Ctrl+K to focus, Enter to send)";
+        }
+    }
+
+    // Templates UI Handlers
+    function openTemplatesModal() {
+        if (!templatesModal) return;
+        templatesModal.classList.add("active");
+        if (mobileModeSelect) mobileModeSelect.value = "templates";
+        if (mobileSegmentedControl) {
+            mobileSegmentedControl.querySelectorAll(".segment-btn").forEach(function (btn) {
+                btn.classList.toggle("active", btn.getAttribute("data-mode") === "templates");
+            });
+        }
+        if (templatePreviewPane) templatePreviewPane.style.display = "none";
+        if (templatesListPane) templatesListPane.style.display = "flex";
+        currentPreviewTemplate = null;
+        loadTemplates();
+    }
+
+    function closeTemplatesModal() {
+        if (!templatesModal) return;
+        templatesModal.classList.remove("active");
+        if (mobileModeSelect) mobileModeSelect.value = isImproveMode ? "improve" : "new";
+        if (mobileSegmentedControl) {
+            mobileSegmentedControl.querySelectorAll(".segment-btn").forEach(function (btn) {
+                btn.classList.toggle("active", btn.getAttribute("data-mode") === (isImproveMode ? "improve" : "new"));
+            });
+        }
+    }
+
+    async function loadTemplates() {
+        if (!templatesListPane) return;
+        try {
+            const resp = await fetch("/api/templates");
+            if (resp.status === 401) {
+                window.location.href = "/login";
+                return;
+            }
+            if (!resp.ok) {
+                throw new Error("Failed to load templates");
+            }
+            allTemplates = await resp.json();
+            renderTemplatesList();
+        } catch (err) {
+            templatesListPane.innerHTML = `<div class="templates-empty-state"><p style="color:var(--danger)">${err.message}</p></div>`;
+        }
+    }
+
+    function renderTemplatesList() {
+        if (!templatesListPane) return;
+        templatesListPane.innerHTML = "";
+
+        const filtered = allTemplates.filter(function (t) {
+            if (activeTemplateCategory === "all") return true;
+            return t.category === activeTemplateCategory;
+        });
+
+        if (filtered.length === 0) {
+            const emptyDiv = document.createElement("div");
+            emptyDiv.className = "templates-empty-state";
+            emptyDiv.innerHTML = `
+                <div class="templates-empty-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                </div>
+                <h3>No templates yet</h3>
+                <p>${activeTemplateCategory === "all" ? "No prompt templates have been added yet. Check back soon!" : "No templates found in this category."}</p>
+            `;
+            templatesListPane.appendChild(emptyDiv);
+            return;
+        }
+
+        const categories = activeTemplateCategory === "all"
+            ? ["study", "writing", "research", "other"]
+            : [activeTemplateCategory];
+
+        categories.forEach(function (cat) {
+            const catTemplates = filtered.filter(function (t) {
+                return t.category === cat;
+            });
+            if (catTemplates.length === 0) return;
+
+            const groupDiv = document.createElement("div");
+            groupDiv.className = "template-category-group";
+
+            const titleSpan = document.createElement("span");
+            titleSpan.className = "template-category-title";
+            titleSpan.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+            groupDiv.appendChild(titleSpan);
+
+            const gridDiv = document.createElement("div");
+            gridDiv.className = "templates-grid";
+
+            catTemplates.forEach(function (tpl) {
+                const card = document.createElement("div");
+                card.className = "template-card";
+                card.setAttribute("data-id", tpl.id);
+
+                const cardTop = document.createElement("div");
+                cardTop.className = "template-card-top";
+
+                const cardTitle = document.createElement("span");
+                cardTitle.className = "template-card-title";
+                cardTitle.textContent = tpl.title;
+
+                const badge = document.createElement("span");
+                badge.className = "type-badge " + tpl.category;
+                badge.textContent = tpl.category;
+
+                cardTop.appendChild(cardTitle);
+                cardTop.appendChild(badge);
+
+                const blurb = document.createElement("p");
+                blurb.className = "template-card-blurb";
+                blurb.textContent = tpl.blurb || "";
+
+                card.appendChild(cardTop);
+                card.appendChild(blurb);
+
+                card.addEventListener("click", function () {
+                    showTemplatePreview(tpl.id);
+                });
+
+                gridDiv.appendChild(card);
+            });
+
+            groupDiv.appendChild(gridDiv);
+            templatesListPane.appendChild(groupDiv);
+        });
+    }
+
+    async function showTemplatePreview(templateId) {
+        if (!templatesListPane || !templatePreviewPane) return;
+        try {
+            const resp = await fetch("/api/templates/" + templateId);
+            if (resp.status === 401) {
+                window.location.href = "/login";
+                return;
+            }
+            if (!resp.ok) {
+                throw new Error("Failed to load template details");
+            }
+            const tpl = await resp.json();
+            currentPreviewTemplate = tpl;
+
+            if (previewTemplateTitle) previewTemplateTitle.textContent = tpl.title;
+            if (previewTemplateBadge) {
+                previewTemplateBadge.textContent = tpl.category;
+                previewTemplateBadge.className = "type-badge " + tpl.category;
+            }
+            if (previewTemplateBlurb) previewTemplateBlurb.textContent = tpl.blurb || "";
+            if (previewTemplateContent) previewTemplateContent.textContent = tpl.content || "";
+
+            templatesListPane.style.display = "none";
+            templatePreviewPane.style.display = "flex";
+        } catch (err) {
+            showError(err.message);
+        }
+    }
+
+    async function useTemplateAsStartingPoint() {
+        if (!currentPreviewTemplate || isLoading) return;
+        setLoading(true);
+        try {
+            const resp = await fetch("/api/templates/" + currentPreviewTemplate.id + "/use", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (resp.status === 401) {
+                window.location.href = "/login";
+                return;
+            }
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || "Failed to use template");
+            }
+
+            closeTemplatesModal();
+            await loadSession(data.session_id);
+            await loadHistory();
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            setLoading(false);
         }
     }
 

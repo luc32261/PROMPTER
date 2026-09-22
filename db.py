@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -84,6 +85,17 @@ CREATE TABLE IF NOT EXISTS admin_audit (
   timestamp       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_admin_audit_id_desc ON admin_audit(id DESC);
+
+CREATE TABLE IF NOT EXISTS templates (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL,
+  category    TEXT NOT NULL,              -- study | writing | research | other
+  blurb       TEXT,                       -- one line
+  content     TEXT NOT NULL,              -- the full final_prompt text
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_templates_category ON templates(category);
 """
 
 
@@ -686,5 +698,116 @@ def clear_admin_audit(db_path: str | Path | None = None) -> None:
     """Delete all records from the admin_audit table."""
     with get_connection(db_path) as conn:
         conn.execute("DELETE FROM admin_audit;")
+
+
+def list_templates(db_path: str | Path | None = None) -> list[sqlite3.Row]:
+    """List all templates ordered by category and id."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT id, title, category, blurb, content, created_at, updated_at FROM templates ORDER BY category ASC, id ASC;"
+        )
+        return cursor.fetchall()
+
+
+def get_template_by_id(
+    template_id: int,
+    db_path: str | Path | None = None,
+) -> sqlite3.Row | None:
+    """Get a single template by ID."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT id, title, category, blurb, content, created_at, updated_at FROM templates WHERE id = ?;",
+            (template_id,),
+        )
+        return cursor.fetchone()
+
+
+def create_template(
+    title: str,
+    category: str,
+    blurb: str | None,
+    content: str,
+    db_path: str | Path | None = None,
+) -> int:
+    """Create a new template and return its ID."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO templates (title, category, blurb, content, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'));",
+            (title.strip(), category.strip().lower(), (blurb or "").strip(), content.strip()),
+        )
+        return int(cursor.lastrowid)
+
+
+def update_template(
+    template_id: int,
+    title: str,
+    category: str,
+    blurb: str | None,
+    content: str,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Update an existing template and refresh updated_at. Returns True if row was updated."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE templates SET title = ?, category = ?, blurb = ?, content = ?, updated_at = datetime('now') WHERE id = ?;",
+            (title.strip(), category.strip().lower(), (blurb or "").strip(), content.strip(), template_id),
+        )
+        return cursor.rowcount > 0
+
+
+def delete_template(
+    template_id: int,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Delete a template by ID. Returns True if row was deleted."""
+    with get_connection(db_path) as conn:
+        cursor = conn.execute("DELETE FROM templates WHERE id = ?;", (template_id,))
+        return cursor.rowcount > 0
+
+
+def create_session_from_template(
+    template_id: int,
+    user_id: int | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    """Create a ready session from a template without invoking any LLM."""
+    tpl = get_template_by_id(template_id, db_path=db_path)
+    if not tpl:
+        return None
+
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO sessions (user_id, idea, type, status) VALUES (?, ?, ?, 'ready');",
+            (user_id, tpl["title"], tpl["category"]),
+        )
+        session_id = int(cursor.lastrowid)
+
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content) VALUES (?, 'user', ?);",
+            (session_id, tpl["title"]),
+        )
+
+        asst_json = json.dumps({
+            "status": "ready",
+            "type": tpl["category"],
+            "final_prompt": tpl["content"],
+        })
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?);",
+            (session_id, asst_json),
+        )
+
+        conn.execute(
+            "INSERT INTO prompts (session_id, final_prompt) VALUES (?, ?);",
+            (session_id, tpl["content"]),
+        )
+
+    return {
+        "session_id": session_id,
+        "status": "ready",
+        "type": tpl["category"],
+        "final_prompt": tpl["content"],
+    }
+
 
 

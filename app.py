@@ -16,8 +16,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from db import (
     clear_admin_audit,
     clear_failed_attempts,
+    create_session_from_template,
+    create_template,
     create_user,
     delete_session,
+    delete_template,
     delete_user_cascade,
     get_all_prompts,
     get_failed_attempts_count,
@@ -25,6 +28,7 @@ from db import (
     get_messages,
     get_recent_admin_audit,
     get_session,
+    get_template_by_id,
     get_total_usage_today,
     get_user_by_id,
     get_user_by_username,
@@ -32,6 +36,7 @@ from db import (
     increment_user_session_version,
     init_db,
     list_sessions,
+    list_templates,
     list_users_with_stats,
     record_admin_audit,
     record_failed_attempt,
@@ -40,6 +45,7 @@ from db import (
     set_user_daily_limit,
     sync_admin,
     toggle_user_active,
+    update_template,
     update_user_login,
 )
 from services.builder import (
@@ -54,6 +60,7 @@ from services.builder import (
 load_dotenv()
 
 MAX_INPUT_LENGTH = 4000
+ALLOWED_TEMPLATE_CATEGORIES = {"study", "writing", "research", "other"}
 
 
 def check_and_enforce_daily_limit(user_id: int | None, db_path: str | Path | None = None) -> tuple[Response, int] | None:
@@ -214,12 +221,24 @@ def create_app(
             request.path in {"/login", "/register", "/logout", "/admin/gate", "/admin/login", "/admin/logout"}
             or request.path.startswith("/static/")
             or (app.config.get("TESTING") and request.path.startswith("/test-"))
+            or (request.method == "GET" and (request.path == "/api/templates" or request.path.startswith("/api/templates/")))
         ):
             return None
 
         user_id = session.get("user_id")
         if not session.get("authenticated") or not user_id:
-            if request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
+            if (
+                request.path == "/admin"
+                or request.path.startswith("/admin/")
+                or request.path.startswith("/api/admin/")
+                or (
+                    request.method in {"POST", "PUT", "DELETE"}
+                    and (
+                        request.path == "/api/templates"
+                        or (request.path.startswith("/api/templates/") and not request.path.endswith("/use"))
+                    )
+                )
+            ):
                 return jsonify({"error": "Not Found"}), 404
             if request.path.startswith("/api/") or request.is_json:
                 return jsonify({"error": "Unauthorized"}), 401
@@ -561,12 +580,14 @@ def create_app(
         total_calls_today = get_total_usage_today(db_path=current_db)
         default_limit = int(os.getenv("DAILY_LIMIT", 100))
         audit_logs = get_recent_admin_audit(limit=100, db_path=current_db)
+        templates = list_templates(db_path=current_db)
         return render_template(
             "admin.html",
             users=users,
             total_calls_today=total_calls_today,
             default_limit=default_limit,
             audit_logs=audit_logs,
+            templates=templates,
             current_user_id=session.get("user_id"),
             current_username=session.get("username", "Admin"),
         )
@@ -733,13 +754,195 @@ def create_app(
         """Health check route to verify service availability."""
         return jsonify({"ok": True})
 
-    @app.route("/api/sessions", methods=["POST"])
-    @limiter.limit("20 per minute")
-    def create_session_route() -> tuple[Response, int]:
-        """Start a new prompt session from an initial user idea."""
+    # --- Template Routes ---
+    @app.route("/api/templates", methods=["GET"])
+    def get_templates_route() -> tuple[Response, int] | Response:
+        """List all prompt templates (id, title, category, blurb)."""
+        current_db = app.config.get("DB_PATH")
+        rows = list_templates(db_path=current_db)
+        items = [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "category": r["category"],
+                "blurb": r["blurb"] or "",
+            }
+            for r in rows
+        ]
+        return jsonify(items), 200
+
+    @app.route("/api/templates/<int:template_id>", methods=["GET"])
+    def get_template_detail_route(template_id: int) -> tuple[Response, int] | Response:
+        """Retrieve full details of a specific template including full content."""
+        current_db = app.config.get("DB_PATH")
+        tpl = get_template_by_id(template_id, db_path=current_db)
+        if not tpl:
+            return jsonify({"error": "Template not found"}), 404
+        return jsonify({
+            "id": tpl["id"],
+            "title": tpl["title"],
+            "category": tpl["category"],
+            "blurb": tpl["blurb"] or "",
+            "content": tpl["content"],
+            "created_at": tpl["created_at"],
+            "updated_at": tpl["updated_at"],
+        }), 200
+
+    @app.route("/api/templates", methods=["POST"])
+    @admin_required
+    def create_template_route() -> tuple[Response, int] | Response:
+        """Create a new prompt template (admin only)."""
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid JSON body"}), 400
+
+        title = data.get("title")
+        category = data.get("category")
+        blurb = data.get("blurb")
+        content = data.get("content")
+
+        if not isinstance(title, str) or not title.strip():
+            return jsonify({"error": "Title is required"}), 400
+        if len(title.strip()) > 150:
+            return jsonify({"error": "Title must be 150 characters or less"}), 400
+
+        if not isinstance(category, str) or category.strip().lower() not in ALLOWED_TEMPLATE_CATEGORIES:
+            return jsonify({"error": "Category must be one of: study, writing, research, other"}), 400
+
+        if not isinstance(content, str) or not content.strip():
+            return jsonify({"error": "Content is required"}), 400
+
+        if blurb is not None and not isinstance(blurb, str):
+            return jsonify({"error": "Blurb must be a string"}), 400
+        if isinstance(blurb, str) and len(blurb.strip()) > 300:
+            return jsonify({"error": "Blurb must be 300 characters or less"}), 400
+
+        current_db = app.config.get("DB_PATH")
+        template_id = create_template(
+            title=title.strip(),
+            category=category.strip().lower(),
+            blurb=blurb.strip() if blurb else "",
+            content=content.strip(),
+            db_path=current_db,
+        )
+
+        record_admin_audit(
+            "template_create",
+            admin_username=session.get("username"),
+            details=f"Created template ID {template_id}: '{title.strip()}' ({category.strip().lower()})",
+            db_path=current_db,
+        )
+
+        created_tpl = get_template_by_id(template_id, db_path=current_db)
+        return jsonify(dict(created_tpl)), 201
+
+    @app.route("/api/templates/<int:template_id>", methods=["PUT"])
+    @admin_required
+    def update_template_route(template_id: int) -> tuple[Response, int] | Response:
+        """Update an existing prompt template (admin only)."""
+        current_db = app.config.get("DB_PATH")
+        existing = get_template_by_id(template_id, db_path=current_db)
+        if not existing:
+            return jsonify({"error": "Template not found"}), 404
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        title = data.get("title")
+        category = data.get("category")
+        blurb = data.get("blurb")
+        content = data.get("content")
+
+        if not isinstance(title, str) or not title.strip():
+            return jsonify({"error": "Title is required"}), 400
+        if len(title.strip()) > 150:
+            return jsonify({"error": "Title must be 150 characters or less"}), 400
+
+        if not isinstance(category, str) or category.strip().lower() not in ALLOWED_TEMPLATE_CATEGORIES:
+            return jsonify({"error": "Category must be one of: study, writing, research, other"}), 400
+
+        if not isinstance(content, str) or not content.strip():
+            return jsonify({"error": "Content is required"}), 400
+
+        if blurb is not None and not isinstance(blurb, str):
+            return jsonify({"error": "Blurb must be a string"}), 400
+        if isinstance(blurb, str) and len(blurb.strip()) > 300:
+            return jsonify({"error": "Blurb must be 300 characters or less"}), 400
+
+        updated = update_template(
+            template_id=template_id,
+            title=title.strip(),
+            category=category.strip().lower(),
+            blurb=blurb.strip() if blurb else "",
+            content=content.strip(),
+            db_path=current_db,
+        )
+        if not updated:
+            return jsonify({"error": "Template not found"}), 404
+
+        record_admin_audit(
+            "template_edit",
+            admin_username=session.get("username"),
+            details=f"Edited template ID {template_id}: '{title.strip()}' ({category.strip().lower()})",
+            db_path=current_db,
+        )
+
+        updated_tpl = get_template_by_id(template_id, db_path=current_db)
+        return jsonify(dict(updated_tpl)), 200
+
+    @app.route("/api/templates/<int:template_id>", methods=["DELETE"])
+    @admin_required
+    def delete_template_route(template_id: int) -> tuple[Response, int] | Response:
+        """Delete a prompt template (admin only)."""
+        current_db = app.config.get("DB_PATH")
+        existing = get_template_by_id(template_id, db_path=current_db)
+        if not existing:
+            return jsonify({"error": "Template not found"}), 404
+
+        title = existing["title"]
+        delete_template(template_id, db_path=current_db)
+
+        record_admin_audit(
+            "template_delete",
+            admin_username=session.get("username"),
+            details=f"Deleted template ID {template_id}: '{title}'",
+            db_path=current_db,
+        )
+
+        return jsonify({"ok": True, "message": "Template deleted successfully"}), 200
+
+    @app.route("/api/templates/<int:template_id>/use", methods=["POST"])
+    def use_template_route(template_id: int) -> tuple[Response, int] | Response:
+        """Create a session loaded with a template as a ready final prompt without LLM call."""
+        user_id = session.get("user_id")
+        current_db = app.config.get("DB_PATH")
+        result = create_session_from_template(template_id, user_id=user_id, db_path=current_db)
+        if not result:
+            return jsonify({"error": "Template not found"}), 404
+        return jsonify(result), 201
+
+    @app.route("/api/sessions", methods=["POST"])
+    @limiter.limit("20 per minute")
+    def create_session_route() -> tuple[Response, int]:
+        """Start a new prompt session from an initial user idea or template."""
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        current_db = app.config.get("DB_PATH")
+        user_id = session.get("user_id")
+
+        template_id = data.get("template_id")
+        if template_id is not None:
+            try:
+                tpl_id = int(template_id)
+            except (ValueError, TypeError):
+                return jsonify({"error": "Invalid template_id"}), 400
+            result = create_session_from_template(tpl_id, user_id=user_id, db_path=current_db)
+            if not result:
+                return jsonify({"error": "Template not found"}), 404
+            return jsonify(result), 201
 
         idea = data.get("idea")
         if not isinstance(idea, str) or not idea.strip():

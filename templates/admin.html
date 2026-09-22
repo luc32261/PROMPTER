@@ -309,6 +309,76 @@
             border-color: rgba(99, 102, 241, 0.3);
         }
 
+        .audit-badge.template_create,
+        .audit-badge.template_edit,
+        .audit-badge.template_delete {
+            background-color: rgba(168, 85, 247, 0.15);
+            color: #d8b4fe;
+            border-color: rgba(168, 85, 247, 0.3);
+        }
+
+        /* Type Badges */
+        .type-badge {
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            text-transform: capitalize;
+            display: inline-block;
+            letter-spacing: 0.02em;
+        }
+
+        .type-badge.study {
+            background-color: var(--tag-study-bg);
+            color: var(--tag-study-text);
+        }
+
+        .type-badge.writing {
+            background-color: var(--tag-writing-bg);
+            color: var(--tag-writing-text);
+        }
+
+        .type-badge.research {
+            background-color: var(--tag-research-bg);
+            color: var(--tag-research-text);
+        }
+
+        .type-badge.other {
+            background-color: var(--tag-other-bg);
+            color: var(--tag-other-text);
+        }
+
+        /* Form Inputs in Modals */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-label {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            background-color: var(--bg-base);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 0.88rem;
+            outline: none;
+            box-sizing: border-box;
+            font-family: inherit;
+            transition: var(--transition);
+        }
+
+        .form-input:focus {
+            border-color: var(--accent-primary);
+        }
+
         /* Modals */
         .modal-overlay {
             position: fixed;
@@ -1042,6 +1112,81 @@
                 </div>
             </div>
 
+            <!-- Prompt Templates Card -->
+            <div class="admin-card" style="margin-top: 24px;">
+                <div class="admin-card-header">
+                    <div class="admin-card-title">Prompt Templates</div>
+                    <div class="summary-chips" style="display: flex; gap: 10px; align-items: center;">
+                        <div class="user-count-badge" id="templates-count-badge">{{ templates|length }} total templates</div>
+                        <button 
+                            type="button" 
+                            class="btn btn-primary" 
+                            id="btn-add-template"
+                            onclick="openAddTemplateModal()"
+                            style="padding: 6px 14px; font-size: 0.82rem;"
+                        >
+                            + Add Template
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="admin-table template-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Blurb</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="template-table-body">
+                            {% if templates %}
+                                {% for tpl in templates %}
+                                <tr id="template-row-{{ tpl.id }}" class="admin-template-row">
+                                    <td class="cell-template-title">
+                                        <strong style="color: var(--text-primary);">{{ tpl.title }}</strong>
+                                    </td>
+                                    <td class="cell-template-category">
+                                        <span class="type-badge {{ tpl.category }}">{{ tpl.category }}</span>
+                                    </td>
+                                    <td class="cell-template-blurb" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        <span style="color: var(--text-secondary); font-size: 0.85rem;">{{ tpl.blurb or '-' }}</span>
+                                    </td>
+                                    <td class="cell-template-created">
+                                        <span class="utc-timestamp" data-utc="{{ tpl.created_at }}">{{ tpl.created_at }}</span>
+                                    </td>
+                                    <td class="cell-template-actions">
+                                        <div class="action-buttons">
+                                            <button 
+                                                type="button" 
+                                                class="btn btn-secondary btn-sm"
+                                                onclick="openEditTemplateModal({{ tpl.id }})"
+                                            >
+                                                Edit
+                                            </button>
+                                            <button 
+                                                type="button" 
+                                                class="btn btn-secondary btn-sm btn-delete"
+                                                onclick="openDeleteTemplateModal({{ tpl.id }}, '{{ tpl.title|replace('\'', '\\\'') }}')"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr id="empty-template-row">
+                                    <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">No templates created yet. Click "+ Add Template" to create your first ready-made prompt template.</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Admin Audit Log Card -->
             <div class="admin-card" style="margin-top: 24px;">
                 <div class="admin-card-header">
@@ -1149,6 +1294,60 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
                 <button class="btn btn-primary" style="background-color: var(--danger-color); border-color: var(--danger-color);" id="btn-confirm-delete">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Template Modal -->
+    <div id="template-form-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 560px;">
+            <div class="modal-header">
+                <div class="modal-title" id="template-form-modal-title">Add Prompt Template</div>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <input type="hidden" id="template-form-id" value="">
+                <div class="form-group">
+                    <label class="form-label" for="template-title">Title *</label>
+                    <input type="text" id="template-title" class="form-input" placeholder="e.g. Linear Algebra Exam Prep" maxlength="150" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="template-category">Category *</label>
+                    <select id="template-category" class="form-input" required>
+                        <option value="study">Study</option>
+                        <option value="writing">Writing</option>
+                        <option value="research">Research</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="template-blurb">Blurb (one line)</label>
+                    <input type="text" id="template-blurb" class="form-input" placeholder="e.g. Comprehensive study guide generator with practice problems" maxlength="300">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="template-content">Prompt Content *</label>
+                    <textarea id="template-content" class="form-input" rows="7" placeholder="The full, model-agnostic final prompt text..." style="resize: vertical; font-family: monospace; font-size: 0.85rem;" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeTemplateFormModal()">Cancel</button>
+                <button class="btn btn-primary" id="btn-save-template" onclick="saveTemplate()">Save Template</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Template Confirmation Modal -->
+    <div id="delete-template-modal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title" style="color: var(--danger-color);">Delete Template</div>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete template <strong id="delete-template-target-title"></strong>?</p>
+                <p style="margin-top: 8px; font-size: 0.85rem; color: #fca5a5;">This template will be permanently removed. This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeleteTemplateModal()">Cancel</button>
+                <button class="btn btn-primary" style="background-color: var(--danger-color); border-color: var(--danger-color);" id="btn-confirm-delete-template" onclick="confirmDeleteTemplate()">Confirm Delete</button>
             </div>
         </div>
     </div>
@@ -1300,6 +1499,130 @@
                 if (row) row.remove();
             } catch (err) {
                 alert('Network error while deleting user');
+            }
+        }
+
+        // --- Templates Management ---
+        let pendingDeleteTemplateId = null;
+
+        function openAddTemplateModal() {
+            document.getElementById('template-form-modal-title').textContent = 'Add Prompt Template';
+            document.getElementById('template-form-id').value = '';
+            document.getElementById('template-title').value = '';
+            document.getElementById('template-category').value = 'study';
+            document.getElementById('template-blurb').value = '';
+            document.getElementById('template-content').value = '';
+            document.getElementById('template-form-modal').classList.add('active');
+        }
+
+        async function openEditTemplateModal(templateId) {
+            try {
+                const res = await fetch(`/api/templates/${templateId}`);
+                if (!res.ok) {
+                    alert('Failed to fetch template details');
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('template-form-modal-title').textContent = 'Edit Prompt Template';
+                document.getElementById('template-form-id').value = data.id;
+                document.getElementById('template-title').value = data.title || '';
+                document.getElementById('template-category').value = data.category || 'study';
+                document.getElementById('template-blurb').value = data.blurb || '';
+                document.getElementById('template-content').value = data.content || '';
+                document.getElementById('template-form-modal').classList.add('active');
+            } catch (err) {
+                alert('Network error while fetching template');
+            }
+        }
+
+        function closeTemplateFormModal() {
+            document.getElementById('template-form-modal').classList.remove('active');
+        }
+
+        async function saveTemplate() {
+            const id = document.getElementById('template-form-id').value;
+            const title = document.getElementById('template-title').value.trim();
+            const category = document.getElementById('template-category').value;
+            const blurb = document.getElementById('template-blurb').value.trim();
+            const content = document.getElementById('template-content').value.trim();
+
+            if (!title) {
+                alert('Title is required');
+                document.getElementById('template-title').focus();
+                return;
+            }
+            if (!content) {
+                alert('Content is required');
+                document.getElementById('template-content').focus();
+                return;
+            }
+
+            const btnSave = document.getElementById('btn-save-template');
+            btnSave.disabled = true;
+            btnSave.textContent = 'Saving...';
+
+            const payload = { title, category, blurb, content };
+            const url = id ? `/api/templates/${id}` : '/api/templates';
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to save template');
+                    btnSave.disabled = false;
+                    btnSave.textContent = 'Save Template';
+                    return;
+                }
+                closeTemplateFormModal();
+                window.location.reload();
+            } catch (err) {
+                alert('Network error while saving template');
+                btnSave.disabled = false;
+                btnSave.textContent = 'Save Template';
+            }
+        }
+
+        function openDeleteTemplateModal(id, title) {
+            pendingDeleteTemplateId = id;
+            document.getElementById('delete-template-target-title').textContent = title;
+            document.getElementById('delete-template-modal').classList.add('active');
+        }
+
+        function closeDeleteTemplateModal() {
+            pendingDeleteTemplateId = null;
+            document.getElementById('delete-template-modal').classList.remove('active');
+        }
+
+        async function confirmDeleteTemplate() {
+            if (!pendingDeleteTemplateId) return;
+            const btn = document.getElementById('btn-confirm-delete-template');
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
+
+            try {
+                const res = await fetch(`/api/templates/${pendingDeleteTemplateId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || 'Failed to delete template');
+                    btn.disabled = false;
+                    btn.textContent = 'Confirm Delete';
+                    return;
+                }
+                closeDeleteTemplateModal();
+                const row = document.getElementById(`template-row-${pendingDeleteTemplateId}`);
+                if (row) row.remove();
+                window.location.reload();
+            } catch (err) {
+                alert('Network error while deleting template');
+                btn.disabled = false;
+                btn.textContent = 'Confirm Delete';
             }
         }
 
