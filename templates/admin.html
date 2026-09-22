@@ -96,6 +96,12 @@
             font-weight: 600;
         }
 
+        .summary-chips {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
         .user-count-badge {
             font-size: 0.8rem;
             color: var(--text-secondary);
@@ -103,6 +109,38 @@
             padding: 4px 10px;
             border-radius: 20px;
             border: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        .cell-label {
+            display: none;
+        }
+
+        .limit-container {
+            display: flex;
+            align-items: center;
+        }
+
+        .limit-input-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .limit-input {
+            width: 80px;
+            padding: 4px 8px;
+            font-size: 0.85rem;
+            height: 30px;
+            background-color: var(--bg-base);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+        }
+
+        .btn-save-limit {
+            padding: 6px 10px;
+            font-size: 0.8rem;
         }
 
         .table-responsive {
@@ -366,6 +404,379 @@
             background-color: var(--bg-surface-hover);
             color: var(--text-primary);
         }
+
+        /* Mobile Responsive Viewports (<700px) */
+        @media (max-width: 699.98px) {
+            html, body {
+                width: 100%;
+                overflow-x: hidden;
+            }
+
+            .admin-layout {
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+            }
+
+            .admin-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+                padding: 12px 14px;
+            }
+
+            .admin-header-left {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                width: 100%;
+            }
+
+            .admin-header-title {
+                font-size: 1.05rem;
+                gap: 6px;
+            }
+
+            .admin-header-right {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 8px;
+                width: 100%;
+                padding-top: 10px;
+                border-top: 1px solid var(--border-color);
+                font-size: 0.82rem;
+            }
+
+            .admin-header-right span {
+                font-size: 0.8rem;
+                width: 100%;
+                margin-bottom: 2px;
+            }
+
+            .admin-header-right form {
+                flex: 1;
+            }
+
+            .admin-header-right form button {
+                width: 100%;
+            }
+
+            .admin-header-right a.btn {
+                flex: 1;
+                text-align: center;
+            }
+
+            .admin-main {
+                padding: 14px 10px 48px 10px;
+                width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
+            }
+
+            .admin-card {
+                background-color: transparent;
+                border: none;
+                box-shadow: none;
+                overflow: visible;
+                margin-bottom: 24px;
+            }
+
+            .admin-card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 14px 14px;
+                background-color: var(--bg-surface);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md) var(--radius-md) 0 0;
+            }
+
+            .admin-card-title {
+                font-size: 1.05rem;
+                font-weight: 600;
+                width: 100%;
+            }
+
+            .summary-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                width: 100%;
+            }
+
+            .user-count-badge {
+                font-size: 0.78rem;
+                padding: 4px 10px;
+            }
+
+            .table-responsive {
+                overflow-x: visible;
+                width: 100%;
+                background-color: transparent;
+                border: none;
+            }
+
+            /* Table to Stacked Card Transformation */
+            .admin-table {
+                display: block;
+                width: 100%;
+                border: none;
+            }
+
+            .admin-table thead {
+                display: none !important;
+            }
+
+            .admin-table tbody {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                width: 100%;
+                padding-top: 10px;
+            }
+
+            /* --- USER CARD --- */
+            .admin-table tr.admin-user-row {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                background-color: var(--bg-surface);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+                padding: 16px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+                box-sizing: border-box;
+                width: 100%;
+            }
+
+            .admin-table tr.admin-user-row td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0;
+                border: none;
+                width: 100%;
+                box-sizing: border-box;
+                font-size: 0.88rem;
+            }
+
+            /* Username as Card Title */
+            .admin-table tr.admin-user-row td.cell-username {
+                padding-bottom: 10px;
+                border-bottom: 1px solid var(--border-color);
+                margin-bottom: 2px;
+            }
+
+            .admin-table tr.admin-user-row td.cell-username .user-name-cell {
+                font-size: 1.08rem;
+                font-weight: 600;
+                color: var(--text-primary);
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+
+            /* Label - Value Pairs */
+            .cell-label {
+                display: inline-block !important;
+                font-size: 0.82rem;
+                font-weight: 500;
+                color: var(--text-secondary);
+                flex-shrink: 0;
+            }
+
+            .cell-value {
+                text-align: right;
+            }
+
+            /* Editable Daily Limit full-width inside card */
+            .admin-table tr.admin-user-row td.cell-daily-limit {
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 6px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row td.cell-daily-limit .cell-label {
+                text-align: left;
+                width: 100%;
+            }
+
+            .admin-table tr.admin-user-row td.cell-daily-limit .limit-container {
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row td.cell-daily-limit .limit-input-group {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row td.cell-daily-limit .limit-input {
+                flex: 1;
+                width: 100%;
+                min-width: 0;
+                height: 44px;
+                padding: 8px 12px;
+                font-size: 0.95rem;
+                border-radius: var(--radius-sm);
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row td.cell-daily-limit .btn-save-limit {
+                width: auto !important;
+                min-width: 72px;
+                min-height: 44px;
+                padding: 0 18px;
+                font-size: 0.88rem;
+                font-weight: 600;
+                border-radius: var(--radius-sm);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                box-sizing: border-box;
+            }
+
+            /* Action Buttons: 2x2 grid at bottom with 44px min height */
+            .admin-table tr.admin-user-row td.cell-actions {
+                display: block;
+                padding-top: 12px;
+                border-top: 1px solid var(--border-color);
+                margin-top: 4px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row .action-buttons {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            .admin-table tr.admin-user-row .action-buttons .btn-action {
+                min-height: 44px;
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.84rem;
+                font-weight: 500;
+                padding: 8px 10px;
+                margin: 0;
+                text-align: center;
+                box-sizing: border-box;
+            }
+
+            /* --- AUDIT LOG CARD --- */
+            .admin-table tr.admin-audit-row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                row-gap: 8px;
+                column-gap: 8px;
+                background-color: var(--bg-surface);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+                padding: 16px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+                box-sizing: border-box;
+                width: 100%;
+            }
+
+            .admin-table tr.admin-audit-row td {
+                padding: 0;
+                border: none;
+                font-size: 0.86rem;
+            }
+
+            /* Timestamp and action badge at the top */
+            .admin-table tr.admin-audit-row td.cell-audit-timestamp {
+                grid-column: 1;
+                grid-row: 1;
+                align-self: center;
+                font-weight: 500;
+                color: var(--text-primary);
+                font-size: 0.82rem;
+            }
+
+            .admin-table tr.admin-audit-row td.cell-audit-action {
+                grid-column: 2;
+                grid-row: 1;
+                justify-self: end;
+                align-self: center;
+            }
+
+            /* Admin, Target User, and Details stacked below */
+            .admin-table tr.admin-audit-row td.cell-audit-admin {
+                grid-column: 1 / -1;
+                grid-row: 2;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding-top: 8px;
+                border-top: 1px solid var(--border-color);
+            }
+
+            .admin-table tr.admin-audit-row td.cell-audit-target {
+                grid-column: 1 / -1;
+                grid-row: 3;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .admin-table tr.admin-audit-row td.cell-audit-details {
+                grid-column: 1 / -1;
+                grid-row: 4;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                align-items: flex-start;
+                padding-top: 6px;
+                border-top: 1px dashed var(--border-color);
+            }
+
+            .admin-table tr.admin-audit-row td.cell-audit-details .cell-value {
+                text-align: left;
+                word-break: break-word;
+            }
+
+            .admin-table tr.empty-audit-row {
+                display: block;
+                background-color: var(--bg-surface);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+                padding: 24px 16px;
+                text-align: center;
+                box-sizing: border-box;
+                width: 100%;
+            }
+
+            .admin-table tr.empty-audit-row td {
+                display: block;
+                border: none;
+                padding: 0;
+                text-align: center;
+            }
+
+            .modal-overlay {
+                padding: 14px;
+            }
+
+            .modal-card {
+                padding: 18px 14px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -400,14 +811,14 @@
             <div class="admin-card">
                 <div class="admin-card-header">
                     <div class="admin-card-title">User Accounts</div>
-                    <div style="display: flex; gap: 12px; align-items: center;">
+                    <div class="summary-chips">
                         <div class="user-count-badge">Total Calls Today: <strong style="color: var(--accent-primary);">{{ total_calls_today }}</strong></div>
                         <div class="user-count-badge">{{ users|length }} total users</div>
                     </div>
                 </div>
 
                 <div class="table-responsive">
-                    <table class="admin-table">
+                    <table class="admin-table user-table">
                         <thead>
                             <tr>
                                 <th>Username</th>
@@ -422,8 +833,8 @@
                         </thead>
                         <tbody>
                             {% for user in users %}
-                            <tr id="user-row-{{ user.id }}">
-                                <td>
+                            <tr id="user-row-{{ user.id }}" class="admin-user-row">
+                                <td class="cell-username">
                                     <div class="user-name-cell">
                                         <span>{{ user.username }}</span>
                                         {% if user.id == current_user_id %}
@@ -431,42 +842,60 @@
                                         {% endif %}
                                     </div>
                                 </td>
-                                <td class="utc-timestamp" data-utc="{{ user.created_at }}">{{ user.created_at }}</td>
-                                <td class="utc-timestamp" data-utc="{{ user.last_login or '' }}">{{ user.last_login or 'Never' }}</td>
-                                <td><strong>{{ user.prompt_count }}</strong></td>
-                                <td><strong id="calls-today-{{ user.id }}">{{ user.calls_today }}</strong></td>
-                                <td>
-                                    {% if user.role == 'admin' %}
-                                    <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">Exempt</span>
-                                    {% else %}
-                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                        <input 
-                                            type="number" 
-                                            id="daily-limit-input-{{ user.id }}" 
-                                            style="width: 80px; padding: 4px 8px; font-size: 0.85rem; height: 30px; background-color: var(--bg-base); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary);"
-                                            placeholder="{{ default_limit }}" 
-                                            value="{{ user.daily_limit if user.daily_limit is not none else '' }}"
-                                            min="0"
-                                        />
-                                        <button 
-                                            type="button" 
-                                            class="btn-action" 
-                                            onclick="updateDailyLimit({{ user.id }})" 
-                                            title="Save daily limit (leave blank for default: {{ default_limit }})"
-                                        >
-                                            Save
-                                        </button>
+                                <td class="cell-created">
+                                    <span class="cell-label">Created</span>
+                                    <span class="cell-value utc-timestamp" data-utc="{{ user.created_at }}">{{ user.created_at }}</span>
+                                </td>
+                                <td class="cell-last-login">
+                                    <span class="cell-label">Last Login</span>
+                                    <span class="cell-value utc-timestamp" data-utc="{{ user.last_login or '' }}">{{ user.last_login or 'Never' }}</span>
+                                </td>
+                                <td class="cell-prompt-count">
+                                    <span class="cell-label">Prompt Count</span>
+                                    <span class="cell-value"><strong>{{ user.prompt_count }}</strong></span>
+                                </td>
+                                <td class="cell-calls-today">
+                                    <span class="cell-label">Calls Today</span>
+                                    <span class="cell-value"><strong id="calls-today-{{ user.id }}">{{ user.calls_today }}</strong></span>
+                                </td>
+                                <td class="cell-daily-limit">
+                                    <span class="cell-label">Daily Limit</span>
+                                    <div class="cell-value limit-container">
+                                        {% if user.role == 'admin' %}
+                                        <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">Exempt</span>
+                                        {% else %}
+                                        <div class="limit-input-group">
+                                            <input 
+                                                type="number" 
+                                                id="daily-limit-input-{{ user.id }}" 
+                                                class="limit-input"
+                                                placeholder="{{ default_limit }}" 
+                                                value="{{ user.daily_limit if user.daily_limit is not none else '' }}"
+                                                min="0"
+                                            />
+                                            <button 
+                                                type="button" 
+                                                class="btn-action btn-save-limit" 
+                                                onclick="updateDailyLimit({{ user.id }})" 
+                                                title="Save daily limit (leave blank for default: {{ default_limit }})"
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+                                        {% endif %}
                                     </div>
-                                    {% endif %}
                                 </td>
-                                <td>
-                                    {% if user.is_active == 1 %}
-                                    <span class="status-badge active" id="status-badge-{{ user.id }}">Active</span>
-                                    {% else %}
-                                    <span class="status-badge disabled" id="status-badge-{{ user.id }}">Disabled</span>
-                                    {% endif %}
+                                <td class="cell-status">
+                                    <span class="cell-label">Status</span>
+                                    <div class="cell-value">
+                                        {% if user.is_active == 1 %}
+                                        <span class="status-badge active" id="status-badge-{{ user.id }}">Active</span>
+                                        {% else %}
+                                        <span class="status-badge disabled" id="status-badge-{{ user.id }}">Disabled</span>
+                                        {% endif %}
+                                    </div>
                                 </td>
-                                <td>
+                                <td class="cell-actions">
                                     <div class="action-buttons">
                                         <!-- Disable / Enable Toggle -->
                                         <button 
@@ -519,11 +948,13 @@
             <div class="admin-card" style="margin-top: 24px;">
                 <div class="admin-card-header">
                     <div class="admin-card-title">Admin Audit Log</div>
-                    <div class="user-count-badge">Last {{ audit_logs|length }} events</div>
+                    <div class="summary-chips">
+                        <div class="user-count-badge">Last {{ audit_logs|length }} events</div>
+                    </div>
                 </div>
 
                 <div class="table-responsive">
-                    <table class="admin-table">
+                    <table class="admin-table audit-table">
                         <thead>
                             <tr>
                                 <th>Timestamp</th>
@@ -536,18 +967,29 @@
                         <tbody>
                             {% if audit_logs %}
                                 {% for log in audit_logs %}
-                                <tr>
-                                    <td class="utc-timestamp" data-utc="{{ log.timestamp }}">{{ log.timestamp }}</td>
-                                    <td>
+                                <tr class="admin-audit-row">
+                                    <td class="cell-audit-timestamp">
+                                        <span class="utc-timestamp" data-utc="{{ log.timestamp }}">{{ log.timestamp }}</span>
+                                    </td>
+                                    <td class="cell-audit-action">
                                         <span class="audit-badge {{ log.action }}">{{ log.action }}</span>
                                     </td>
-                                    <td>{{ log.admin_username or '-' }}</td>
-                                    <td>{{ log.target_username or '-' }}</td>
-                                    <td style="color: var(--text-secondary); font-size: 0.84rem;">{{ log.details or '-' }}</td>
+                                    <td class="cell-audit-admin">
+                                        <span class="cell-label">Admin</span>
+                                        <span class="cell-value">{{ log.admin_username or '-' }}</span>
+                                    </td>
+                                    <td class="cell-audit-target">
+                                        <span class="cell-label">Target User</span>
+                                        <span class="cell-value">{{ log.target_username or '-' }}</span>
+                                    </td>
+                                    <td class="cell-audit-details">
+                                        <span class="cell-label">Details</span>
+                                        <span class="cell-value">{{ log.details or '-' }}</span>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             {% else %}
-                                <tr>
+                                <tr class="empty-audit-row">
                                     <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">No audit events recorded yet.</td>
                                 </tr>
                             {% endif %}

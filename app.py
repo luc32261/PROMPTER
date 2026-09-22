@@ -204,6 +204,7 @@ def create_app(
         if (
             request.path in {"/login", "/register", "/logout", "/admin/gate", "/admin/login", "/admin/logout"}
             or request.path.startswith("/static/")
+            or (app.config.get("TESTING") and request.path.startswith("/test-"))
         ):
             return None
 
