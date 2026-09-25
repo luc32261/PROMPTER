@@ -23,18 +23,30 @@ class ModelOutputError(Exception):
     pass
 
 
-def build_system_prompt(session_type: str | None, attachment_text: str | None = None) -> str:
-    """Compose the system prompt from brain.txt, any applicable type hints, and attachment context."""
+def build_system_prompt(
+    session_type: str | None,
+    attachment_text: str | None = None,
+    attachment_filename: str | None = None,
+    attachment_summarized: bool = False,
+) -> str:
+    """Compose the system prompt from brain.txt, type hints, and attachment context."""
     base = (PROMPTS / "brain.txt").read_text(encoding="utf-8")
     if session_type in {"study", "writing", "research", "other"}:
         type_file = PROMPTS / "types" / f"{session_type}.txt"
         if type_file.exists():
             base += "\n\n" + type_file.read_text(encoding="utf-8")
     if attachment_text and attachment_text.strip():
-        att_file = PROMPTS / "attachment_context.txt"
+        filename = attachment_filename or "document"
+        if attachment_summarized:
+            att_file = PROMPTS / "attachment_context_long.txt"
+        else:
+            att_file = PROMPTS / "attachment_context_short.txt"
+        if not att_file.exists():
+            att_file = PROMPTS / "attachment_context.txt"
         if att_file.exists():
             att_template = att_file.read_text(encoding="utf-8")
-            base += "\n\n" + att_template.replace("{material}", attachment_text.strip())
+            att_content = att_template.replace("{material}", attachment_text.strip()).replace("{filename}", filename)
+            base += "\n\n" + att_content
     return base
 
 
@@ -109,7 +121,15 @@ def run_turn(
 
     history = get_messages(session_id, db_path=db_path)
     attachment_text = session["attachment_text"] if "attachment_text" in session.keys() else None
-    system_prompt = build_system_prompt(session["type"], attachment_text=attachment_text)
+    attachment_filename = session["attachment_filename"] if "attachment_filename" in session.keys() else None
+    attachment_summarized = bool(session["attachment_summarized"]) if "attachment_summarized" in session.keys() else False
+
+    system_prompt = build_system_prompt(
+        session["type"],
+        attachment_text=attachment_text,
+        attachment_filename=attachment_filename,
+        attachment_summarized=attachment_summarized,
+    )
 
     prior_asks = count_prior_questions(history)
     force_ready = (prior_asks >= MAX_QUESTIONS) or skip
@@ -123,6 +143,23 @@ def run_turn(
     if force_ready:
         messages_for_llm.append(
             {"role": "system", "content": "Generate the final prompt now. status MUST be 'ready'."}
+        )
+
+    step_name = "final_generation" if force_ready else "follow_up_question"
+    if attachment_text:
+        preview = (attachment_text[:200] + "...") if len(attachment_text) > 200 else attachment_text
+        print(
+            f"[builder:run_turn:pre_call_llm] session_id={session_id} step={step_name} "
+            f"attachment_file={attachment_filename!r} summarized={attachment_summarized} "
+            f"messages_count={len(messages_for_llm)} attachment_len={len(attachment_text)}\n"
+            f"  [ATTACHMENT CONTEXT IN MESSAGES[0]]:\n  {preview}",
+            flush=True,
+        )
+    else:
+        print(
+            f"[builder:run_turn:pre_call_llm] session_id={session_id} step={step_name} "
+            f"attachment_file=None messages_count={len(messages_for_llm)}",
+            flush=True,
         )
 
     raw = call_llm(messages_for_llm, json_mode=True, max_tokens=4000)
@@ -198,6 +235,7 @@ def run_turn(
     result["session_id"] = session_id
     result["has_attachment"] = bool(session["has_attachment"]) if "has_attachment" in session.keys() else False
     result["attachment_filename"] = session["attachment_filename"] if "attachment_filename" in session.keys() else None
+    result["attachment_summarized"] = bool(session["attachment_summarized"]) if "attachment_summarized" in session.keys() else False
     return result
 
 
@@ -211,22 +249,25 @@ def create_session_with_idea(
     has_attachment = 0
     attachment_filename = None
     attachment_text = None
+    attachment_summarized = 0
 
     if attachment is not None:
         filename, file_bytes = attachment
         try:
             from services.extractor import process_attachment
-            processed_text, _ = process_attachment(file_bytes, filename)
+            processed_text, was_summarized = process_attachment(file_bytes, filename)
             if processed_text and processed_text.strip():
                 has_attachment = 1
                 attachment_filename = filename
                 attachment_text = processed_text.strip()
+                attachment_summarized = 1 if was_summarized else 0
         except Exception as exc:
             # Graceful degradation: flow continues with user's idea alone
             print(f"[Attachment extraction failed for {filename}]: {exc}", flush=True)
             has_attachment = 0
             attachment_filename = None
             attachment_text = None
+            attachment_summarized = 0
 
     session_id = create_session(
         idea,
@@ -234,6 +275,7 @@ def create_session_with_idea(
         has_attachment=has_attachment,
         attachment_filename=attachment_filename,
         attachment_text=attachment_text,
+        attachment_summarized=attachment_summarized,
         db_path=db_path,
     )
     add_message(session_id, "user", idea, db_path=db_path)

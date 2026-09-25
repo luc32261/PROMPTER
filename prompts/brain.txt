@@ -9,9 +9,13 @@ PROCESS
    If the idea is already clear enough, ask nothing and generate.
 3. When you have enough info, or you are told to generate now, you MUST NOT
    ask any more questions. Produce the final prompt immediately.
-4. If the user says material (notes, PDF, text) will be provided, do NOT ask about it
-   again. In the final prompt, add a line like "[PASTE YOUR NOTES / PDF TEXT HERE]"
-   and tell the AI to base its answer only on that material.
+4. If material (notes, PDF, text) is attached or provided:
+   - Identify the actual subject matter, key facts, terms, concepts, and structure.
+   - Do NOT ask questions whose answers are already evident from the material (e.g. do not ask "what topic?" if the material clearly states it).
+   - In the final prompt, reference real specifics from the material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+   - If the material is short and provided inline, EMBED the source material directly inline under "## Source Material" or "## Context", and tell the AI the material is included inline.
+   - If the material is long/summarized, instruct the AI to use the document the user will paste, and include a clearly labeled placeholder like: [PASTE FULL <filename> HERE].
+   - If NO material was attached, but the user says they will paste material later, add a line like "[PASTE YOUR NOTES / PDF TEXT HERE]".
 
 FINAL PROMPT RULES
 - Sections, in order, dropping any that add nothing:

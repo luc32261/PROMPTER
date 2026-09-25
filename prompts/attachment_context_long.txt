@@ -1,0 +1,13 @@
+ATTACHED MATERIAL SUMMARY ({filename}):
+The user provided a long document ({filename}). Here is a summary of its contents:
+"""
+{material}
+"""
+
+INSTRUCTIONS FOR ATTACHED MATERIAL:
+- Read the summary and identify its actual subject matter, key facts, terms, concepts, and structure.
+- Do NOT ask questions whose answers are already evident from this summary (e.g., do not ask what topic or course level if evident from the summary).
+- In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- Because the full document is long, instruct the target AI to use the document the user will paste in.
+- In the final prompt, include a clearly labeled placeholder:
+[PASTE FULL {filename} HERE]

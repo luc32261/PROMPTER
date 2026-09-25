@@ -1083,6 +1083,7 @@ def create_app(
             "status": session_row["status"],
             "has_attachment": bool(session_row["has_attachment"]) if "has_attachment" in session_row.keys() else False,
             "attachment_filename": session_row["attachment_filename"] if "attachment_filename" in session_row.keys() else None,
+            "attachment_summarized": bool(session_row["attachment_summarized"]) if "attachment_summarized" in session_row.keys() else False,
             "created_at": session_row["created_at"],
             "messages": [
                 {

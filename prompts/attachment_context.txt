@@ -1,1 +1,11 @@
-The user has provided this material: {material}. Use it to inform your questions and the final prompt; don't ask for information already present in it.
+ATTACHED MATERIAL:
+The user has provided this material:
+"""
+{material}
+"""
+
+INSTRUCTIONS FOR ATTACHED MATERIAL:
+- Read the material and identify its actual subject matter, key facts, terms, concepts, and structure.
+- Do NOT ask questions whose answers are already evident from this material.
+- In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- Embed the source material inline under "## Source Material" or "## Context" if concise, or provide [PASTE FULL DOCUMENT HERE] if long.

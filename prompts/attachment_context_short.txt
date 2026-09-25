@@ -1,0 +1,12 @@
+ATTACHED MATERIAL ({filename}):
+The user has provided this material:
+"""
+{material}
+"""
+
+INSTRUCTIONS FOR ATTACHED MATERIAL:
+- Read the material and identify its actual subject matter, key facts, terms, concepts, and structure.
+- Do NOT ask questions whose answers are already evident from this material (e.g., do not ask what topic or course level if evident from the material).
+- In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- Because this material is concise (under ~3,000 words), EMBED the condensed source material directly inline in the final prompt under a "## Source Material" or "## Context" section.
+- Explicitly tell the target AI that the source material is provided inline in the prompt itself.

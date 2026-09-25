@@ -212,9 +212,36 @@ def test_flow_degrades_gracefully_on_unsupported_file(test_db: Path) -> None:
 
 def test_attachment_context_included_in_system_prompt() -> None:
     """Verify that build_system_prompt includes the required material prompt template."""
-    prompt_with_material = build_system_prompt("study", attachment_text="Vector calculus topics: Divergence and Curl.")
-    assert "The user has provided this material: Vector calculus topics: Divergence and Curl." in prompt_with_material
-    assert "Use it to inform your questions and the final prompt; don't ask for information already present in it." in prompt_with_material
+    prompt_with_material = build_system_prompt(
+        "study",
+        attachment_text="Vector calculus topics: Divergence and Curl.",
+        attachment_filename="syllabus.txt",
+    )
+    assert "ATTACHED MATERIAL (syllabus.txt):" in prompt_with_material
+    assert "Vector calculus topics: Divergence and Curl." in prompt_with_material
+    assert "EMBED the condensed source material directly inline" in prompt_with_material
+
+
+def test_attachment_context_short_vs_long_templates() -> None:
+    """Verify short files use inline instructions and long files use paste placeholder instructions."""
+    short_prompt = build_system_prompt(
+        "study",
+        attachment_text="Brief notes on calculus.",
+        attachment_filename="notes.pdf",
+        attachment_summarized=False,
+    )
+    assert "ATTACHED MATERIAL (notes.pdf):" in short_prompt
+    assert "EMBED the condensed source material directly inline" in short_prompt
+    assert "## Source Material" in short_prompt
+
+    long_prompt = build_system_prompt(
+        "study",
+        attachment_text="Summary of comprehensive textbook.",
+        attachment_filename="textbook.pdf",
+        attachment_summarized=True,
+    )
+    assert "ATTACHED MATERIAL SUMMARY (textbook.pdf):" in long_prompt
+    assert "[PASTE FULL textbook.pdf HERE]" in long_prompt
 
 
 def test_attachment_context_persists_across_follow_ups(test_db: Path) -> None:
@@ -242,7 +269,8 @@ def test_attachment_context_persists_across_follow_ups(test_db: Path) -> None:
         # Check call_llm system prompt for Turn 1
         turn1_messages = mock_llm.call_args_list[0][0][0]
         turn1_system = turn1_messages[0]["content"]
-        assert "The user has provided this material: Syllabus: Stokes Theorem" in turn1_system
+        assert "Syllabus: Stokes Theorem" in turn1_system
+        assert "ATTACHED MATERIAL (syllabus.txt):" in turn1_system
 
         # Turn 2: Follow-up answer
         res2 = advance_session(session_id, text="Stokes Theorem", db_path=test_db)
@@ -252,7 +280,91 @@ def test_attachment_context_persists_across_follow_ups(test_db: Path) -> None:
         # Check call_llm system prompt for Turn 2: it MUST still contain the material
         turn2_messages = mock_llm.call_args_list[1][0][0]
         turn2_system = turn2_messages[0]["content"]
-        assert "The user has provided this material: Syllabus: Stokes Theorem" in turn2_system
+        assert "Syllabus: Stokes Theorem" in turn2_system
+        assert "ATTACHED MATERIAL (syllabus.txt):" in turn2_system
+
+
+def test_final_prompt_contains_identifiable_terms_from_attachment(test_db: Path) -> None:
+    """Requirement 4: Verify generated final_prompt contains identifiable terms from the uploaded file."""
+    sample_pdf_path = Path(__file__).resolve().parent / "sample_math_syllabus.pdf"
+    assert sample_pdf_path.exists()
+    pdf_bytes = sample_pdf_path.read_bytes()
+
+    # The PDF contains: 'Math 201 Calculus III: Vector fields, Green Theorem, Stokes Theorem, and Surface Integrals.'
+    mock_ready_reply = json.dumps({
+        "status": "ready",
+        "type": "study",
+        "final_prompt": (
+            "## Role\nAdvanced Calculus Tutor\n\n"
+            "## Context\n"
+            "The student is preparing for Math 201 Calculus III.\n\n"
+            "## Source Material\n"
+            "Math 201 Calculus III: Vector fields, Green Theorem, Stokes Theorem, and Surface Integrals.\n\n"
+            "## Task\n"
+            "Teach the relationship between Green's Theorem and Stokes' Theorem, and how they apply to Surface Integrals in Vector fields.\n"
+        ),
+    })
+
+    with patch("services.builder.call_llm", return_value=mock_ready_reply) as mock_llm:
+        res = create_session_with_idea(
+            "Help me study for my upcoming exam",
+            attachment=("sample_math_syllabus.pdf", pdf_bytes),
+            db_path=test_db,
+        )
+
+        assert res["status"] == "ready"
+        final_prompt = res["final_prompt"]
+
+        # 1. Identifiable specific terms from the syllabus must be present
+        assert "Stokes" in final_prompt or "Green" in final_prompt
+        assert "Surface Integrals" in final_prompt
+        assert "Vector fields" in final_prompt or "Calculus III" in final_prompt
+
+        # 2. Short files must embed the source material inline under ## Source Material or ## Context
+        assert "## Source Material" in final_prompt or "## Context" in final_prompt
+
+        # 3. Must not contain generic placeholders like [TOPIC] or [PASTE YOUR NOTES / PDF TEXT HERE]
+        assert "[TOPIC]" not in final_prompt
+        assert "[PASTE YOUR NOTES / PDF TEXT HERE]" not in final_prompt
+
+        # 4. Verify system prompt passed to call_llm contained the extracted PDF text
+        call_system_prompt = mock_llm.call_args[0][0][0]["content"]
+        assert "Green Theorem" in call_system_prompt
+        assert "Stokes Theorem" in call_system_prompt
+        assert "sample_math_syllabus.pdf" in call_system_prompt
+
+
+def test_long_attachment_generates_paste_placeholder(test_db: Path) -> None:
+    """Requirement 3(b): Verify long/summarized file uses [PASTE FULL <filename> HERE] placeholder."""
+    mock_ready_reply = json.dumps({
+        "status": "ready",
+        "type": "study",
+        "final_prompt": (
+            "## Role\nBiochemistry Professor\n\n"
+            "## Context\n"
+            "Analyzing the attached full textbook chapter on cellular respiration.\n\n"
+            "## Task\n"
+            "Explain the electron transport chain and ATP synthesis based on the provided text.\n\n"
+            "[PASTE FULL biochemistry_handbook.pdf HERE]\n"
+        ),
+    })
+
+    with patch("services.extractor.process_attachment", return_value=("Summary of biochemistry chapter", True)), \
+         patch("services.builder.call_llm", return_value=mock_ready_reply) as mock_llm:
+        res = create_session_with_idea(
+            "Help me understand cellular respiration",
+            attachment=("biochemistry_handbook.pdf", b"fake long bytes"),
+            db_path=test_db,
+        )
+
+        assert res["status"] == "ready"
+        final_prompt = res["final_prompt"]
+        assert "[PASTE FULL biochemistry_handbook.pdf HERE]" in final_prompt
+
+        # Verify system prompt instructed placeholder
+        call_system_prompt = mock_llm.call_args[0][0][0]["content"]
+        assert "ATTACHED MATERIAL SUMMARY (biochemistry_handbook.pdf):" in call_system_prompt
+        assert "[PASTE FULL biochemistry_handbook.pdf HERE]" in call_system_prompt
 
 
 # --- API Endpoint Integration Tests ---
