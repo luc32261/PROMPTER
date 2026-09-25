@@ -23,13 +23,18 @@ class ModelOutputError(Exception):
     pass
 
 
-def build_system_prompt(session_type: str | None) -> str:
-    """Compose the system prompt from brain.txt and any applicable type hints."""
+def build_system_prompt(session_type: str | None, attachment_text: str | None = None) -> str:
+    """Compose the system prompt from brain.txt, any applicable type hints, and attachment context."""
     base = (PROMPTS / "brain.txt").read_text(encoding="utf-8")
     if session_type in {"study", "writing", "research", "other"}:
         type_file = PROMPTS / "types" / f"{session_type}.txt"
         if type_file.exists():
             base += "\n\n" + type_file.read_text(encoding="utf-8")
+    if attachment_text and attachment_text.strip():
+        att_file = PROMPTS / "attachment_context.txt"
+        if att_file.exists():
+            att_template = att_file.read_text(encoding="utf-8")
+            base += "\n\n" + att_template.replace("{material}", attachment_text.strip())
     return base
 
 
@@ -103,7 +108,8 @@ def run_turn(
         raise KeyError(f"Session {session_id} not found")
 
     history = get_messages(session_id, db_path=db_path)
-    system_prompt = build_system_prompt(session["type"])
+    attachment_text = session["attachment_text"] if "attachment_text" in session.keys() else None
+    system_prompt = build_system_prompt(session["type"], attachment_text=attachment_text)
 
     prior_asks = count_prior_questions(history)
     force_ready = (prior_asks >= MAX_QUESTIONS) or skip
@@ -190,16 +196,46 @@ def run_turn(
 
     result = dict(parsed)
     result["session_id"] = session_id
+    result["has_attachment"] = bool(session["has_attachment"]) if "has_attachment" in session.keys() else False
+    result["attachment_filename"] = session["attachment_filename"] if "attachment_filename" in session.keys() else None
     return result
 
 
 def create_session_with_idea(
     idea: str,
     user_id: int | None = None,
+    attachment: tuple[str, bytes] | None = None,
     db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Create a new session, record the idea as user message, and run the first turn."""
-    session_id = create_session(idea, user_id=user_id, db_path=db_path)
+    has_attachment = 0
+    attachment_filename = None
+    attachment_text = None
+
+    if attachment is not None:
+        filename, file_bytes = attachment
+        try:
+            from services.extractor import process_attachment
+            processed_text, _ = process_attachment(file_bytes, filename)
+            if processed_text and processed_text.strip():
+                has_attachment = 1
+                attachment_filename = filename
+                attachment_text = processed_text.strip()
+        except Exception as exc:
+            # Graceful degradation: flow continues with user's idea alone
+            print(f"[Attachment extraction failed for {filename}]: {exc}", flush=True)
+            has_attachment = 0
+            attachment_filename = None
+            attachment_text = None
+
+    session_id = create_session(
+        idea,
+        user_id=user_id,
+        has_attachment=has_attachment,
+        attachment_filename=attachment_filename,
+        attachment_text=attachment_text,
+        db_path=db_path,
+    )
     add_message(session_id, "user", idea, db_path=db_path)
     return run_turn(session_id, skip=False, db_path=db_path)
 

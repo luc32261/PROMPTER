@@ -997,6 +997,95 @@ body {
     border-color: var(--accent-primary);
 }
 
+/* Attachment Controls */
+.btn-attach {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.btn-attach:hover:not(:disabled) {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+}
+
+.attachment-preview {
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 9999px;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+.attachment-chip svg {
+    color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+.attachment-name {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-remove-attachment {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-remove-attachment:hover {
+    color: var(--danger, #ef4444);
+}
+
+/* Attachment Chip inside Chat Bubble */
+.attachment-chat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    background-color: rgba(255, 255, 255, 0.16);
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    margin-bottom: 6px;
+    width: fit-content;
+    font-weight: 500;
+}
+
+.attachment-chat-chip svg {
+    opacity: 0.9;
+}
+
 .input-form {
     width: 100%;
     max-width: 800px;

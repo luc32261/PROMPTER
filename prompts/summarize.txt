@@ -1,0 +1,3 @@
+Summarize the following document concisely down to a few hundred words. Capture the key concepts, main topics, structure, requirements, and constraints so that it can be used as context to craft an effective prompt:
+
+{text}

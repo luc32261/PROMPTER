@@ -38,6 +38,7 @@
     let currentPreviewTemplate = null;
     let searchQuery = "";
     let isImproveMode = false;
+    let selectedAttachmentFile = null;
 
     // DOM Elements
     const emptyState = document.getElementById("empty-state");
@@ -47,6 +48,11 @@
     const searchInput = document.getElementById("search-input");
     const inputText = document.getElementById("input-text");
     const btnSend = document.getElementById("btn-send");
+    const btnAttach = document.getElementById("btn-attach");
+    const fileInput = document.getElementById("file-input");
+    const attachmentPreview = document.getElementById("attachment-preview");
+    const attachmentName = document.getElementById("attachment-name");
+    const btnRemoveAttachment = document.getElementById("btn-remove-attachment");
     const btnNewPrompt = document.getElementById("btn-new-prompt");
     const btnToggleMode = document.getElementById("btn-toggle-mode");
     const btnTemplates = document.getElementById("btn-templates");
@@ -233,6 +239,17 @@
 
         btnSkip.addEventListener("click", handleSkip);
 
+        if (btnAttach && fileInput) {
+            btnAttach.addEventListener("click", function () {
+                fileInput.click();
+            });
+            fileInput.addEventListener("change", handleFileSelected);
+        }
+
+        if (btnRemoveAttachment) {
+            btnRemoveAttachment.addEventListener("click", clearSelectedAttachment);
+        }
+
         // Example pills
         document.querySelectorAll(".pill-btn").forEach(function (pill) {
             pill.addEventListener("click", function () {
@@ -356,6 +373,49 @@
         } catch (e) {}
     }
 
+    // Attachment handlers
+    function handleFileSelected() {
+        if (!fileInput.files || fileInput.files.length === 0) return;
+        const file = fileInput.files[0];
+        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+        if (file.size > MAX_SIZE) {
+            alert("File size exceeds 10MB limit. Please choose a smaller file.");
+            clearSelectedAttachment();
+            return;
+        }
+
+        const validExts = [".pdf", ".docx", ".txt"];
+        const lowerName = file.name.toLowerCase();
+        const hasValidExt = validExts.some(function (ext) { return lowerName.endsWith(ext); });
+        if (!hasValidExt) {
+            alert("Unsupported file format. Please upload a .pdf, .docx, or .txt file.");
+            clearSelectedAttachment();
+            return;
+        }
+
+        selectedAttachmentFile = file;
+        if (attachmentName) attachmentName.textContent = file.name;
+        if (attachmentPreview) attachmentPreview.style.display = "flex";
+        if (inputText) inputText.focus();
+    }
+
+    function clearSelectedAttachment() {
+        selectedAttachmentFile = null;
+        if (fileInput) fileInput.value = "";
+        if (attachmentPreview) attachmentPreview.style.display = "none";
+        if (attachmentName) attachmentName.textContent = "";
+    }
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     // Update Mode UI state
     function updateModeUI(mode) {
         if (mode === "improve") {
@@ -383,10 +443,13 @@
         const emptyDesc = emptyState.querySelector("p");
 
         if (isImproveMode) {
+            clearSelectedAttachment();
+            if (btnAttach) btnAttach.style.display = "none";
             if (emptyTitle) emptyTitle.textContent = "Improve an existing prompt";
             if (emptyDesc) emptyDesc.textContent = "Paste any draft or existing prompt below. The assistant will transform it into a structured, model-agnostic prompt and detail the changes made.";
             inputText.placeholder = "Paste your existing prompt here to improve it... (Ctrl+K to focus, Enter to send)";
         } else {
+            if (btnAttach && !currentSessionId) btnAttach.style.display = "inline-flex";
             if (emptyTitle) emptyTitle.textContent = "What do you want a prompt for?";
             if (emptyDesc) emptyDesc.textContent = "Enter a rough idea below. The assistant will ask a few quick questions to craft an optimal, model-agnostic prompt.";
             inputText.placeholder = "Type your idea or answer... (Ctrl+K to focus, Enter to send)";
@@ -610,6 +673,8 @@
     function resetToEmptyState() {
         currentSessionId = null;
         currentSessionStatus = null;
+        clearSelectedAttachment();
+        if (btnAttach) btnAttach.style.display = isImproveMode ? "none" : "inline-flex";
         messageList.innerHTML = "";
         messageList.style.display = "none";
         emptyState.style.display = "flex";
@@ -695,6 +760,17 @@
             dateSpan.textContent = formatDate(sess.created_at);
             meta.appendChild(dateSpan);
 
+            if (sess.has_attachment) {
+                const attIcon = document.createElement("span");
+                attIcon.className = "history-att-icon";
+                attIcon.title = sess.attachment_filename || "Has attachment";
+                attIcon.style.display = "inline-flex";
+                attIcon.style.alignItems = "center";
+                attIcon.style.color = "var(--accent-primary)";
+                attIcon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>';
+                meta.appendChild(attIcon);
+            }
+
             content.appendChild(ideaSpan);
             content.appendChild(meta);
 
@@ -748,16 +824,21 @@
             const data = await resp.json();
             currentSessionId = data.id;
             currentSessionStatus = data.status;
+            clearSelectedAttachment();
+            if (btnAttach) btnAttach.style.display = "none";
 
             emptyState.style.display = "none";
             messageList.style.display = "flex";
             messageList.innerHTML = "";
 
             // Render messages
+            let firstUserMsg = true;
             if (data.messages && data.messages.length > 0) {
                 data.messages.forEach(function (msg) {
                     if (msg.role === "user") {
-                        appendUserBubble(msg.content);
+                        const att = (firstUserMsg && data.has_attachment && data.attachment_filename) ? data.attachment_filename : null;
+                        appendUserBubble(msg.content, att);
+                        firstUserMsg = false;
                     } else if (msg.role === "assistant") {
                         renderAssistantMessage(msg.content, data.prompts);
                     }
@@ -803,13 +884,25 @@
         }
     }
 
-    // Append user message bubble
-    function appendUserBubble(text) {
+    // Append user message bubble with optional attachment chip
+    function appendUserBubble(text, attachmentFilename) {
         const row = document.createElement("div");
         row.className = "message-row user";
         const bubble = document.createElement("div");
         bubble.className = "bubble user";
-        bubble.textContent = text;
+
+        if (attachmentFilename) {
+            const chip = document.createElement("div");
+            chip.className = "attachment-chat-chip";
+            chip.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> <span>' + escapeHtml(attachmentFilename) + '</span>';
+            bubble.appendChild(chip);
+        }
+
+        const textDiv = document.createElement("div");
+        textDiv.className = "user-text-content";
+        textDiv.textContent = text;
+        bubble.appendChild(textDiv);
+
         row.appendChild(bubble);
         messageList.appendChild(row);
         scrollToBottom();
@@ -1186,16 +1279,22 @@
     // Handle Send Action
     async function handleSend() {
         const text = inputText.value.trim();
-        if (!text || isLoading) return;
+        const file = selectedAttachmentFile;
+        if ((!text && !file) || isLoading) return;
 
         if (emptyState.style.display !== "none") {
             emptyState.style.display = "none";
             messageList.style.display = "flex";
         }
 
-        appendUserBubble(text);
+        const displayText = text || (file ? `Attached: ${file.name}` : "");
+        const displayAttachment = file ? file.name : null;
+
+        appendUserBubble(displayText, displayAttachment);
         inputText.value = "";
         autoResizeTextarea();
+        clearSelectedAttachment();
+        if (btnAttach) btnAttach.style.display = "none";
         setLoading(true);
 
         if (!currentSessionId) {
@@ -1235,11 +1334,22 @@
                 const action = async function () {
                     setLoading(true);
                     try {
-                        const resp = await fetch("/api/sessions", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ idea: text }),
-                        });
+                        let resp;
+                        if (file) {
+                            const formData = new FormData();
+                            formData.append("idea", text || `Document: ${file.name}`);
+                            formData.append("file", file);
+                            resp = await fetch("/api/sessions", {
+                                method: "POST",
+                                body: formData,
+                            });
+                        } else {
+                            resp = await fetch("/api/sessions", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ idea: text }),
+                            });
+                        }
                         if (resp.status === 401) {
                             window.location.href = "/login";
                             return;

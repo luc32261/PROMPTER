@@ -37,12 +37,15 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  idea        TEXT NOT NULL,
-  type        TEXT,                       -- study | writing | research | other
-  status      TEXT NOT NULL DEFAULT 'asking',  -- asking | ready
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id             INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  idea                TEXT NOT NULL,
+  type                TEXT,                       -- study | writing | research | other
+  status              TEXT NOT NULL DEFAULT 'asking',  -- asking | ready
+  has_attachment      INTEGER NOT NULL DEFAULT 0,
+  attachment_filename TEXT,
+  attachment_text     TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -239,6 +242,12 @@ def init_db(db_path: str | Path | None = None) -> list[str]:
             session_columns = [row["name"] for row in cursor.fetchall()]
             if "user_id" not in session_columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
+            if "has_attachment" not in session_columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN has_attachment INTEGER NOT NULL DEFAULT 0;")
+            if "attachment_filename" not in session_columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN attachment_filename TEXT;")
+            if "attachment_text" not in session_columns:
+                conn.execute("ALTER TABLE sessions ADD COLUMN attachment_text TEXT;")
 
             # Migration: Case-insensitive usernames unique index check
             case_duplicates = check_and_migrate_case_insensitive_usernames(conn)
@@ -336,9 +345,12 @@ def update_user_session_version(user_id: int, session_version: int, db_path: str
 def create_session(
     idea: str,
     user_id: int | None = None,
+    has_attachment: int = 0,
+    attachment_filename: str | None = None,
+    attachment_text: str | None = None,
     db_path: str | Path | None = None,
 ) -> int:
-    """Create a new session with an initial idea and optional user owner."""
+    """Create a new session with an initial idea, optional user owner, and optional attachment."""
     with get_connection(db_path) as conn:
         if user_id is not None:
             user_row = conn.execute("SELECT id FROM users WHERE id = ?;", (user_id,)).fetchone()
@@ -347,13 +359,13 @@ def create_session(
 
         if user_id is not None:
             cursor = conn.execute(
-                "INSERT INTO sessions (idea, status, user_id) VALUES (?, 'asking', ?);",
-                (idea, user_id),
+                "INSERT INTO sessions (idea, status, user_id, has_attachment, attachment_filename, attachment_text) VALUES (?, 'asking', ?, ?, ?, ?);",
+                (idea, user_id, has_attachment, attachment_filename, attachment_text),
             )
         else:
             cursor = conn.execute(
-                "INSERT INTO sessions (idea, status) VALUES (?, 'asking');",
-                (idea,),
+                "INSERT INTO sessions (idea, status, has_attachment, attachment_filename, attachment_text) VALUES (?, 'asking', ?, ?, ?);",
+                (idea, has_attachment, attachment_filename, attachment_text),
             )
         return int(cursor.lastrowid)
 
@@ -367,12 +379,12 @@ def get_session(
     with get_connection(db_path) as conn:
         if user_id is not None:
             cursor = conn.execute(
-                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE id = ? AND user_id = ?;",
+                "SELECT id, user_id, idea, type, status, has_attachment, attachment_filename, attachment_text, created_at FROM sessions WHERE id = ? AND user_id = ?;",
                 (session_id, user_id),
             )
         else:
             cursor = conn.execute(
-                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE id = ?;",
+                "SELECT id, user_id, idea, type, status, has_attachment, attachment_filename, attachment_text, created_at FROM sessions WHERE id = ?;",
                 (session_id,),
             )
         return cursor.fetchone()
@@ -470,12 +482,12 @@ def list_sessions(
     with get_connection(db_path) as conn:
         if user_id is not None:
             cursor = conn.execute(
-                "SELECT id, user_id, idea, type, status, created_at FROM sessions WHERE user_id = ? ORDER BY id DESC;",
+                "SELECT id, user_id, idea, type, status, has_attachment, attachment_filename, created_at FROM sessions WHERE user_id = ? ORDER BY id DESC;",
                 (user_id,),
             )
         else:
             cursor = conn.execute(
-                "SELECT id, user_id, idea, type, status, created_at FROM sessions ORDER BY id DESC;",
+                "SELECT id, user_id, idea, type, status, has_attachment, attachment_filename, created_at FROM sessions ORDER BY id DESC;",
             )
         return cursor.fetchall()
 

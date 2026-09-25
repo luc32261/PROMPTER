@@ -925,15 +925,36 @@ def create_app(
     @app.route("/api/sessions", methods=["POST"])
     @limiter.limit("20 per minute")
     def create_session_route() -> tuple[Response, int]:
-        """Start a new prompt session from an initial user idea or template."""
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid JSON body"}), 400
-
+        """Start a new prompt session from an initial user idea, template, or uploaded file."""
         current_db = app.config.get("DB_PATH")
         user_id = session.get("user_id")
 
-        template_id = data.get("template_id")
+        uploaded_file = None
+        idea = None
+        template_id = None
+
+        if request.content_type and "multipart/form-data" in request.content_type:
+            idea = request.form.get("idea")
+            uploaded_file = request.files.get("file")
+            template_id = request.form.get("template_id")
+        elif request.is_json:
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"error": "Invalid JSON body"}), 400
+            idea = data.get("idea")
+            template_id = data.get("template_id")
+        else:
+            data = request.get_json(silent=True)
+            if isinstance(data, dict):
+                idea = data.get("idea")
+                template_id = data.get("template_id")
+            elif request.form:
+                idea = request.form.get("idea")
+                uploaded_file = request.files.get("file")
+                template_id = request.form.get("template_id")
+            else:
+                return jsonify({"error": "Invalid request format"}), 400
+
         if template_id is not None:
             try:
                 tpl_id = int(template_id)
@@ -944,22 +965,37 @@ def create_app(
                 return jsonify({"error": "Template not found"}), 404
             return jsonify(result), 201
 
-        idea = data.get("idea")
-        if not isinstance(idea, str) or not idea.strip():
-            return jsonify({"error": "Idea must be a non-empty string"}), 400
+        attachment: tuple[str, bytes] | None = None
+        if uploaded_file and uploaded_file.filename:
+            uploaded_file.seek(0, os.SEEK_END)
+            file_size = uploaded_file.tell()
+            uploaded_file.seek(0)
+            if file_size > 10 * 1024 * 1024:
+                return jsonify({"error": "File size exceeds 10MB limit"}), 400
+            file_bytes = uploaded_file.read()
+            attachment = (uploaded_file.filename, file_bytes)
+
+        if not attachment:
+            if not isinstance(idea, str) or not idea.strip():
+                return jsonify({"error": "Idea must be a non-empty string"}), 400
+        else:
+            if not isinstance(idea, str) or not idea.strip():
+                idea = f"Document attached: {attachment[0]}"
 
         if len(idea) > MAX_INPUT_LENGTH:
             return jsonify({"error": f"Input must be {MAX_INPUT_LENGTH} characters or less"}), 400
-
-        current_db = app.config.get("DB_PATH")
-        user_id = session.get("user_id")
 
         limit_err = check_and_enforce_daily_limit(user_id, db_path=current_db)
         if limit_err:
             return limit_err
 
         try:
-            result = create_session_with_idea(idea.strip(), user_id=user_id, db_path=current_db)
+            result = create_session_with_idea(
+                idea.strip(),
+                user_id=user_id,
+                attachment=attachment,
+                db_path=current_db,
+            )
             if user_id:
                 record_llm_usage(user_id, request.path, success=1, db_path=current_db)
             return jsonify(result), 201
@@ -1019,6 +1055,8 @@ def create_app(
                 "idea": r["idea"],
                 "type": r["type"],
                 "status": r["status"],
+                "has_attachment": bool(r["has_attachment"]) if "has_attachment" in r.keys() else False,
+                "attachment_filename": r["attachment_filename"] if "attachment_filename" in r.keys() else None,
                 "created_at": r["created_at"],
             }
             for r in rows
@@ -1043,6 +1081,8 @@ def create_app(
             "idea": session_row["idea"],
             "type": session_row["type"],
             "status": session_row["status"],
+            "has_attachment": bool(session_row["has_attachment"]) if "has_attachment" in session_row.keys() else False,
+            "attachment_filename": session_row["attachment_filename"] if "attachment_filename" in session_row.keys() else None,
             "created_at": session_row["created_at"],
             "messages": [
                 {
