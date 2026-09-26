@@ -2,10 +2,8 @@ import io
 from pathlib import Path
 from typing import Any
 
-from pypdf import PdfReader
-from docx import Document
-
 from services.llm import call_llm
+
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 MAX_EXTRACT_WORDS = 15000
@@ -48,6 +46,10 @@ def extract_text_from_file(file_bytes: bytes, filename: str, max_words: int = MA
 
     elif ext == ".pdf":
         try:
+            from pypdf import PdfReader
+        except ImportError as exc:
+            raise ExtractionError("Package 'pypdf' is required for PDF extraction. Please install it with 'pip install pypdf'.") from exc
+        try:
             reader = PdfReader(io.BytesIO(file_bytes))
             pages = []
             for page in reader.pages:
@@ -59,6 +61,10 @@ def extract_text_from_file(file_bytes: bytes, filename: str, max_words: int = MA
             raise ExtractionError(f"Failed to extract text from PDF: {exc}") from exc
 
     elif ext == ".docx":
+        try:
+            from docx import Document
+        except ImportError as exc:
+            raise ExtractionError("Package 'python-docx' is required for DOCX extraction. Please install it with 'pip install python-docx'.") from exc
         try:
             doc = Document(io.BytesIO(file_bytes))
             parts = []

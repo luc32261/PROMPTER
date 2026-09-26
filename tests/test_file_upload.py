@@ -93,6 +93,15 @@ def test_extract_text_docx() -> None:
     assert "Backpropagation | 2 weeks" in extracted
 
 
+def test_extract_docx_does_not_require_pypdf() -> None:
+    """Verify that extracting text from a .docx file does not import or require pypdf."""
+    docx_bytes = make_docx_bytes(paragraphs=["Testing docx isolation."])
+    with patch.dict("sys.modules", {"pypdf": None}):
+        extracted = extract_text_from_file(docx_bytes, "test.docx")
+        assert "Testing docx isolation." in extracted
+
+
+
 def test_extract_text_word_cap() -> None:
     """Verify that extraction caps content at roughly 15,000 words."""
     words = [f"word{i}" for i in range(16000)]
