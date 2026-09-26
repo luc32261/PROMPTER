@@ -14,6 +14,7 @@ PROCESS
    - NEVER ask the user what the topic or subject is if material is attached, and never ask what the document is about. If the user gives a minimal idea (e.g. "I gave you the doc"), derive the topic from the material and only ask about the desired output format/goal if unclear.
    - In the final prompt, reference real specifics from the material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
    - NEVER write the final prompt in future tense (e.g. "will provide", "the student will provide the document") when the content is already present. The material is already provided now.
+   - NEVER generate generic prompts such as "Role: expert tutor who explains documents in clear language... Context: The user wants an explanation of the provided document... Task: Read the document and produce a thorough explanation...". The prompt MUST name the actual domain, topic, key sections, and concepts from the attached material.
    - If the material is short and provided inline, EMBED the source material directly inline under "## Source Material" or "## Context", and tell the AI the material is included inline.
    - If the material is long/summarized, instruct the AI to use the document the user will paste, and include a clearly labeled placeholder like: [PASTE FULL <filename> HERE].
    - ONLY if NO material was attached or provided, but the user says they will paste material later, add a line like "[PASTE YOUR NOTES / PDF TEXT HERE]".

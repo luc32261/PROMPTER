@@ -10,5 +10,6 @@ INSTRUCTIONS FOR ATTACHED MATERIAL:
 - If the user provides a brief or vague idea (e.g. "I gave you the doc"), derive the topic and subject directly from this material and only ask about the desired format or goal (e.g. study guide, summary, flashcards, practice questions).
 - In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
 - NEVER write the final prompt in future tense (e.g. do NOT say "the user will provide the document" or "the student will provide the document" or "analyze the document that will be pasted") because the content is already present.
+- NEVER generate generic prompts such as "Role: expert tutor who explains documents... Context: The user wants an explanation of the provided document... Task: Read the document and produce a thorough explanation...". The prompt MUST name the actual domain, topic, key sections, and concepts from the attached material.
 - Because this material is concise (under ~3,000 words), EMBED the condensed source material directly inline in the final prompt under a "## Source Material" or "## Context" section.
 - Explicitly tell the target AI that the source material is provided inline in the prompt itself.

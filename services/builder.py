@@ -140,22 +140,23 @@ def run_turn(
     for msg in history:
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
 
-    if force_ready:
-        ready_instruction = "Generate the final prompt now. status MUST be 'ready'."
-        if attachment_text:
+    if attachment_text:
+        attachment_directive = (
+            f"REMINDER FOR ATTACHED MATERIAL ('{attachment_filename or 'document'}'): "
+            "You MUST ground all responses and the final prompt in the actual subject matter, concepts, and terms from the attached material. "
+            "NEVER generate generic descriptions like 'the provided document' or 'read the document'; name the specific topic and concepts directly."
+        )
+        if force_ready:
+            ready_instruction = f"Generate the final prompt now. status MUST be 'ready'. {attachment_directive}"
             if attachment_summarized:
-                ready_instruction += (
-                    f" The following material was provided as a summary of {attachment_filename or 'the document'}. "
-                    "Use the real topic, concepts, and terms from it. Never write in future tense ('will provide') "
-                    f"for the subject matter, and include [PASTE FULL {attachment_filename or 'document'} HERE]."
-                )
+                ready_instruction += f" Include [PASTE FULL {attachment_filename or 'document'} HERE]."
             else:
-                ready_instruction += (
-                    " The following material was provided inline. Identify the real subject, concepts, and terms "
-                    "from it directly. Embed the source material inline under '## Source Material' and NEVER write "
-                    "in future tense ('will provide' / 'the student will provide the document') when content is already present."
-                )
-        messages_for_llm.append({"role": "system", "content": ready_instruction})
+                ready_instruction += " Embed the source material inline under '## Source Material'."
+            messages_for_llm.append({"role": "system", "content": ready_instruction})
+        else:
+            messages_for_llm.append({"role": "system", "content": attachment_directive})
+    elif force_ready:
+        messages_for_llm.append({"role": "system", "content": "Generate the final prompt now. status MUST be 'ready'."})
 
     step_name = "final_generation" if force_ready else "follow_up_question"
     print(

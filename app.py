@@ -980,7 +980,7 @@ def create_app(
                 extracted_sample = extract_text_from_file(file_bytes, uploaded_file.filename)
                 print(
                     f"[UPLOAD_ENDPOINT:EXTRACTED_TEXT] filename={uploaded_file.filename!r} "
-                    f"total_length={len(extracted_sample)} chars first_200={extracted_sample[:200]!r}",
+                    f"total_length={len(extracted_sample)} chars first_300={extracted_sample[:300]!r}",
                     flush=True,
                 )
             except Exception as extract_err:
