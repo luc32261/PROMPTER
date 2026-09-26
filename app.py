@@ -974,6 +974,20 @@ def create_app(
                 return jsonify({"error": "File size exceeds 10MB limit"}), 400
             file_bytes = uploaded_file.read()
             attachment = (uploaded_file.filename, file_bytes)
+            # Confirm file text extraction at upload endpoint
+            from services.extractor import extract_text_from_file
+            try:
+                extracted_sample = extract_text_from_file(file_bytes, uploaded_file.filename)
+                print(
+                    f"[UPLOAD_ENDPOINT:EXTRACTED_TEXT] filename={uploaded_file.filename!r} "
+                    f"total_length={len(extracted_sample)} chars first_200={extracted_sample[:200]!r}",
+                    flush=True,
+                )
+            except Exception as extract_err:
+                print(
+                    f"[UPLOAD_ENDPOINT:EXTRACT_FAILED] filename={uploaded_file.filename!r} error={extract_err}",
+                    flush=True,
+                )
 
         if not attachment:
             if not isinstance(idea, str) or not idea.strip():

@@ -1,11 +1,12 @@
 ATTACHED MATERIAL:
-The user has provided this material:
+The following material was provided:
 """
 {material}
 """
 
 INSTRUCTIONS FOR ATTACHED MATERIAL:
-- Read the material and identify its actual subject matter, key facts, terms, concepts, and structure.
-- Do NOT ask questions whose answers are already evident from this material.
-- In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- The following material was provided by the user. Read it and identify the real subject and topic, key facts, terms, concepts, and structure directly from this material itself.
+- NEVER ask the user what the topic or subject is if a file is attached, and never ask what the document is about.
+- In the final prompt, reference real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- NEVER write the final prompt in future tense ("will provide", "the student will provide the document") when content is already present.
 - Embed the source material inline under "## Source Material" or "## Context" if concise, or provide [PASTE FULL DOCUMENT HERE] if long.

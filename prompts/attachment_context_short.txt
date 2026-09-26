@@ -1,12 +1,14 @@
 ATTACHED MATERIAL ({filename}):
-The user has provided this material:
+The following material was provided:
 """
 {material}
 """
 
 INSTRUCTIONS FOR ATTACHED MATERIAL:
-- Read the material and identify its actual subject matter, key facts, terms, concepts, and structure.
-- Do NOT ask questions whose answers are already evident from this material (e.g., do not ask what topic or course level if evident from the material).
+- The following material was provided by the user. Read it and identify the real subject and topic, key facts, terms, concepts, and structure directly from this material itself.
+- NEVER ask the user what the topic or subject is, and never ask what the document is about. The content and topic are already provided above.
+- If the user provides a brief or vague idea (e.g. "I gave you the doc"), derive the topic and subject directly from this material and only ask about the desired format or goal (e.g. study guide, summary, flashcards, practice questions).
 - In the final prompt, reference the real specifics from this material (actual topic names, terms, concepts found in it). Never use generic placeholders like [TOPIC] or phrases like "the content that will be provided".
+- NEVER write the final prompt in future tense (e.g. do NOT say "the user will provide the document" or "the student will provide the document" or "analyze the document that will be pasted") because the content is already present.
 - Because this material is concise (under ~3,000 words), EMBED the condensed source material directly inline in the final prompt under a "## Source Material" or "## Context" section.
 - Explicitly tell the target AI that the source material is provided inline in the prompt itself.

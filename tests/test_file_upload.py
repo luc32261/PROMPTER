@@ -418,3 +418,78 @@ def test_api_reject_file_over_10mb(client: FlaskClient) -> None:
     assert resp.status_code == 400
     res = resp.get_json()
     assert res == {"error": "File size exceeds 10MB limit"}
+
+
+def test_upload_file_integration_flow_does_not_ask_topic_and_contains_real_terms(client: FlaskClient) -> None:
+    """Requirement 6: Integration test: upload a file with identifiable content, send one message, and assert:
+    (a) model does not ask what the topic is,
+    (b) final_prompt contains actual terms from file content, not placeholder language.
+    """
+    file_content = (
+        "Quantum Cryptography Protocol: BB84 protocol using polarized photons, "
+        "quantum key distribution, and eavesdropping detection via quantum bit error rate (QBER)."
+    )
+
+    mock_ask_reply = json.dumps({
+        "status": "ask",
+        "type": "study",
+        "question": "What format would you prefer for the quantum cryptography study guide (e.g., flashcards, practice problems, or summary notes)?",
+    })
+    mock_ready_reply = json.dumps({
+        "status": "ready",
+        "type": "study",
+        "final_prompt": (
+            "## Role\nQuantum Computing Educator\n\n"
+            "## Context\n"
+            "The following material was provided inline:\n\n"
+            "## Source Material\n"
+            f"{file_content}\n\n"
+            "## Task\n"
+            "Create a flashcard study guide on the BB84 protocol, quantum key distribution, and QBER threshold analysis.\n"
+        ),
+    })
+
+    with patch("services.builder.call_llm", side_effect=[mock_ask_reply, mock_ready_reply]) as mock_llm:
+        # Step 1: Upload file with idea "I gave you the doc"
+        data = {
+            "idea": "I gave you the doc",
+            "file": (io.BytesIO(file_content.encode("utf-8")), "quantum_crypto.txt"),
+        }
+        resp = client.post("/api/sessions", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 201
+        res1 = resp.get_json()
+        assert res1["status"] == "ask"
+        assert res1["has_attachment"] is True
+        assert res1["attachment_filename"] == "quantum_crypto.txt"
+        session_id = res1["session_id"]
+
+        # (a) Assert the response does NOT ask what the topic or document is about
+        question = res1["question"].lower()
+        assert "what topic" not in question
+        assert "what subject" not in question
+        assert "what is this document about" not in question
+        assert "what document" not in question
+
+        # Verify system prompt passed to call_llm contained the extracted text and instructions
+        turn1_system_prompt = mock_llm.call_args_list[0][0][0][0]["content"]
+        assert "BB84 protocol using polarized photons" in turn1_system_prompt
+        assert "the following material was provided" in turn1_system_prompt.lower()
+
+        # Step 2: Send one user message to advance the session
+        resp2 = client.post(
+            f"/api/sessions/{session_id}/messages",
+            json={"text": "Flashcards please", "skip": False},
+        )
+        assert resp2.status_code == 200
+        res2 = resp2.get_json()
+        assert res2["status"] == "ready"
+        final_prompt = res2["final_prompt"]
+
+        # (b) Assert final_prompt contains actual terms from file content, not placeholder language
+        assert "BB84" in final_prompt
+        assert "quantum key distribution" in final_prompt
+        assert "QBER" in final_prompt
+        assert "[TOPIC]" not in final_prompt
+        assert "[PASTE YOUR NOTES / PDF TEXT HERE]" not in final_prompt
+        assert "will provide" not in final_prompt.lower()
+        assert "## Source Material" in final_prompt or "## Context" in final_prompt

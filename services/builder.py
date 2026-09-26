@@ -141,24 +141,35 @@ def run_turn(
         messages_for_llm.append({"role": msg["role"], "content": msg["content"]})
 
     if force_ready:
-        messages_for_llm.append(
-            {"role": "system", "content": "Generate the final prompt now. status MUST be 'ready'."}
-        )
+        ready_instruction = "Generate the final prompt now. status MUST be 'ready'."
+        if attachment_text:
+            if attachment_summarized:
+                ready_instruction += (
+                    f" The following material was provided as a summary of {attachment_filename or 'the document'}. "
+                    "Use the real topic, concepts, and terms from it. Never write in future tense ('will provide') "
+                    f"for the subject matter, and include [PASTE FULL {attachment_filename or 'document'} HERE]."
+                )
+            else:
+                ready_instruction += (
+                    " The following material was provided inline. Identify the real subject, concepts, and terms "
+                    "from it directly. Embed the source material inline under '## Source Material' and NEVER write "
+                    "in future tense ('will provide' / 'the student will provide the document') when content is already present."
+                )
+        messages_for_llm.append({"role": "system", "content": ready_instruction})
 
     step_name = "final_generation" if force_ready else "follow_up_question"
-    if attachment_text:
-        preview = (attachment_text[:200] + "...") if len(attachment_text) > 200 else attachment_text
+    print(
+        f"\n[builder:run_turn:pre_call_llm] session_id={session_id} step={step_name} "
+        f"messages_count={len(messages_for_llm)} attachment_file={attachment_filename!r} "
+        f"summarized={attachment_summarized} attachment_len={len(attachment_text) if attachment_text else 0}",
+        flush=True,
+    )
+    for idx, msg in enumerate(messages_for_llm):
+        has_att = bool(attachment_text and attachment_text in msg["content"])
+        snippet = (msg["content"][:160] + "...") if len(msg["content"]) > 160 else msg["content"]
         print(
-            f"[builder:run_turn:pre_call_llm] session_id={session_id} step={step_name} "
-            f"attachment_file={attachment_filename!r} summarized={attachment_summarized} "
-            f"messages_count={len(messages_for_llm)} attachment_len={len(attachment_text)}\n"
-            f"  [ATTACHMENT CONTEXT IN MESSAGES[0]]:\n  {preview}",
-            flush=True,
-        )
-    else:
-        print(
-            f"[builder:run_turn:pre_call_llm] session_id={session_id} step={step_name} "
-            f"attachment_file=None messages_count={len(messages_for_llm)}",
+            f"  msg[{idx}] role={msg['role']} len={len(msg['content'])} "
+            f"has_attachment_text={has_att} snippet={snippet!r}",
             flush=True,
         )
 
@@ -183,7 +194,15 @@ def run_turn(
 
         if parsed is None and force_ready:
             candidate = retry_raw or raw
-            if candidate and ("## Role" in candidate or "## Task" in candidate or len(candidate.strip()) > 100):
+            is_json_ask = False
+            try:
+                candidate_data = json.loads(candidate)
+                if isinstance(candidate_data, dict) and (candidate_data.get("status") == "ask" or "question" in candidate_data):
+                    is_json_ask = True
+            except Exception:
+                pass
+
+            if candidate and not is_json_ask and ("## Role" in candidate or "## Task" in candidate):
                 parsed = {
                     "status": "ready",
                     "type": session["type"] if session and session["type"] else "other",
@@ -195,7 +214,7 @@ def run_turn(
                     {
                         "role": "user",
                         "content": (
-                            "You must stop asking questions now. Based on all our conversation above, "
+                            "You must stop asking questions now. Based on all our conversation and the provided material above, "
                             "generate the final prompt immediately in the required JSON shape: "
                             '{"status": "ready", "type": "' + (session["type"] or "other") + '", "final_prompt": "## Role\\n...\\n## Task\\n..."}'
                         ),
